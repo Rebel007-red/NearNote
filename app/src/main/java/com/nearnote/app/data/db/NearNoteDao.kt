@@ -33,4 +33,7 @@ interface NearNoteDao {
 
     @Query("UPDATE reminder_tasks SET isEnabled = :enabled, updatedAt = :updatedAt WHERE id = :taskId")
     suspend fun setTaskEnabled(taskId: Long, enabled: Boolean, updatedAt: Long)
+
+    @Query("UPDATE reminder_tasks SET lastFiredAt = :firedAt WHERE id = :taskId")
+    suspend fun setLastFiredAt(taskId: Long, firedAt: Long)
 }

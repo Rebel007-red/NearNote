@@ -18,5 +18,6 @@ data class ReminderTask(
     val recurrenceInterval: Int? = null,
     val isEnabled: Boolean = true,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val lastFiredAt: Long = 0
 )

@@ -44,6 +44,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -448,6 +449,25 @@ private fun ReminderEditorScreen(
     onCancel: () -> Unit,
     onClearStatus: () -> Unit
 ) {
+    var showPlacePicker by remember { mutableStateOf(false) }
+
+    if (showPlacePicker) {
+        PlacePickerSheet(
+            initialPlace = editorState.placeName,
+            onPlaceSelected = { place ->
+                onEditorChange(
+                    editorState.copy(
+                        placeName = place.name,
+                        latitude = place.latitude.toString(),
+                        longitude = place.longitude.toString()
+                    )
+                )
+            },
+            onDismiss = { showPlacePicker = false }
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -469,7 +489,7 @@ private fun ReminderEditorScreen(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "Map search and pin confirmation are still next. For now, save the place name with coordinates so the reminder logic is already structured correctly.",
+                    text = "Search for a place or enter coordinates manually. Everything stays on your device.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color(0xFFD9E5F2)
                 )
@@ -493,12 +513,22 @@ private fun ReminderEditorScreen(
             placeholder = "Ask for refill timing",
             minLines = 3
         )
-        EditorTextField(
-            label = "Place name",
-            value = editorState.placeName,
-            onValueChange = { onEditorChange(editorState.copy(placeName = it)) },
-            placeholder = "City Pharmacy"
-        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            EditorTextField(
+                label = "Place name",
+                value = editorState.placeName,
+                onValueChange = { onEditorChange(editorState.copy(placeName = it)) },
+                placeholder = "City Pharmacy",
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(
+                onClick = { showPlacePicker = true },
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                Text("Search")
+            }
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             EditorTextField(
