@@ -25,6 +25,10 @@ class ReminderRepository(
         dao.setTaskEnabled(taskId, enabled, updatedAt)
     }
 
+    suspend fun setTaskCompleted(taskId: Long, completed: Boolean, updatedAt: Long) {
+        dao.setTaskCompleted(taskId, completed, updatedAt)
+    }
+
     suspend fun setLastFiredAt(taskId: Long, firedAt: Long) {
         dao.setLastFiredAt(taskId, firedAt)
     }

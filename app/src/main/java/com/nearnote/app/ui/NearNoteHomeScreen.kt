@@ -193,6 +193,7 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                         ReminderTaskCard(
                             task = task,
                             onToggle = { viewModel.toggleTask(task) },
+                            onToggleCompleted = { viewModel.toggleTaskCompleted(task) },
                             onEdit = { viewModel.startEditReminder(task) }
                         )
                     }
@@ -365,7 +366,12 @@ private fun StatusCard(message: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ReminderTaskCard(task: ReminderTask, onToggle: () -> Unit, onEdit: () -> Unit) {
+private fun ReminderTaskCard(
+    task: ReminderTask,
+    onToggle: () -> Unit,
+    onToggleCompleted: () -> Unit,
+    onEdit: () -> Unit
+) {
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFFDFBF7)),
@@ -407,11 +413,17 @@ private fun ReminderTaskCard(task: ReminderTask, onToggle: () -> Unit, onEdit: (
                 Chip(label = "${task.radiusMeters}m")
                 Chip(label = task.triggerMode.replace('_', ' '))
                 Chip(label = task.recurrenceType)
+                if (task.isCompleted) {
+                    Chip(label = "Completed")
+                }
             }
             Spacer(modifier = Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = onEdit) {
                     Text("Edit")
+                }
+                OutlinedButton(onClick = onToggleCompleted) {
+                    Text(if (task.isCompleted) "Reopen" else "Complete")
                 }
                 Text(
                     text = "${task.latitude}, ${task.longitude}",

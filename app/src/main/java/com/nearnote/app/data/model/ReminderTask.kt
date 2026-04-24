@@ -17,6 +17,7 @@ data class ReminderTask(
     val recurrenceType: String = "ONCE",
     val recurrenceInterval: Int? = null,
     val isEnabled: Boolean = true,
+    val isCompleted: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
     val lastFiredAt: Long = 0

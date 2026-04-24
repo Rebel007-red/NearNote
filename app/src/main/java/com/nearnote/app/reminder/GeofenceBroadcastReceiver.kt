@@ -28,7 +28,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 event.triggeringGeofences
                     ?.mapNotNull { geofence -> geofence.requestId.removePrefix("reminder-").toLongOrNull() }
                     ?.forEach { taskId ->
-                        repository.getTaskById(taskId)?.takeIf { it.isEnabled }?.let { task ->
+                        repository.getTaskById(taskId)?.takeIf { it.isEnabled && !it.isCompleted }?.let { task ->
                             if (shouldNotifyForRecurrence(task, nowMs)) {
                                 notifier.showReminder(task, transitionLabel)
                                 repository.setLastFiredAt(taskId, nowMs)

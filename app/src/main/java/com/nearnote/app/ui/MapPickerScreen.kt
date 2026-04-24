@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
@@ -59,6 +60,9 @@ fun MapPickerScreen(
     var selectedLongitude by remember { mutableDoubleStateOf(initialLongitude.takeIf { it != 0.0 } ?: 77.2090) }
     var isSearching by remember { mutableStateOf(false) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
+    var touchDownX by remember { mutableStateOf(0f) }
+    var touchDownY by remember { mutableStateOf(0f) }
+    var touchMoved by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         Configuration.getInstance().load(context, android.preference.PreferenceManager.getDefaultSharedPreferences(context))
@@ -76,10 +80,30 @@ fun MapPickerScreen(
                     MapView(ctx).apply {
                         mapView = this
                         setTileSource(TileSourceFactory.MAPNIK)
+                        setMultiTouchControls(true)
+                        zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                         controller.setZoom(16.0)
                         controller.setCenter(GeoPoint(selectedLatitude, selectedLongitude))
                         setOnTouchListener { v, event ->
-                            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                            when (event.actionMasked) {
+                                android.view.MotionEvent.ACTION_DOWN -> {
+                                    touchDownX = event.x
+                                    touchDownY = event.y
+                                    touchMoved = false
+                                }
+
+                                android.view.MotionEvent.ACTION_MOVE -> {
+                                    if (!touchMoved) {
+                                        val dx = kotlin.math.abs(event.x - touchDownX)
+                                        val dy = kotlin.math.abs(event.y - touchDownY)
+                                        if (dx > 16f || dy > 16f) {
+                                            touchMoved = true
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (event.pointerCount == 1 && event.action == android.view.MotionEvent.ACTION_UP && !touchMoved) {
                                 val projection = (v as? MapView)?.projection
                                 val geoPoint = projection?.fromPixels(event.x.toInt(), event.y.toInt())
                                 if (geoPoint != null) {

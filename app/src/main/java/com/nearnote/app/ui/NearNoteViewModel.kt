@@ -68,7 +68,8 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
             dwellMinutes = task.dwellMinutes.toString(),
             recurrenceType = task.recurrenceType,
             recurrenceInterval = task.recurrenceInterval?.toString().orEmpty(),
-            isEnabled = task.isEnabled
+            isEnabled = task.isEnabled,
+            isCompleted = task.isCompleted
         )
         statusMessage.value = null
     }
@@ -99,6 +100,23 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun toggleTaskCompleted(task: ReminderTask) {
+        viewModelScope.launch {
+            val updatedAt = System.currentTimeMillis()
+            val completed = !task.isCompleted
+            repository.setTaskCompleted(task.id, completed, updatedAt)
+            val updatedTask = repository.getTaskById(task.id)
+            if (updatedTask != null) {
+                if (updatedTask.isEnabled && !updatedTask.isCompleted) {
+                    geofenceScheduler.upsert(updatedTask)
+                } else {
+                    geofenceScheduler.remove(updatedTask.id)
+                }
+            }
+            statusMessage.value = if (completed) "Reminder marked complete" else "Reminder reopened"
+        }
+    }
+
     fun saveReminder() {
         val current = editorState.value ?: return
         val validation = validate(current)
@@ -123,6 +141,7 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
                     recurrenceType = current.recurrenceType,
                     recurrenceInterval = current.recurrenceInterval.trim().takeIf { current.recurrenceType == RECURRENCE_CUSTOM && it.isNotEmpty() }?.toInt(),
                     isEnabled = current.isEnabled,
+                    isCompleted = current.isCompleted,
                     createdAt = current.createdAt ?: now,
                     updatedAt = now
                 )
@@ -212,7 +231,8 @@ data class ReminderEditorState(
     val dwellMinutes: String = "2",
     val recurrenceType: String = NearNoteViewModel.RECURRENCE_ONCE,
     val recurrenceInterval: String = "",
-    val isEnabled: Boolean = true
+    val isEnabled: Boolean = true,
+    val isCompleted: Boolean = false
 )
 
 @Composable

@@ -22,7 +22,7 @@ class GeofenceScheduler(
     suspend fun refreshAll(tasks: List<ReminderTask>) {
         geofencingClient.removeGeofences(geofencePendingIntent)
         if (!hasLocationPermission()) return
-        tasks.filter { it.isEnabled }.forEach { task ->
+        tasks.filter { it.isEnabled && !it.isCompleted }.forEach { task ->
             upsert(task)
         }
     }
@@ -33,7 +33,7 @@ class GeofenceScheduler(
 
     @SuppressLint("MissingPermission")
     suspend fun upsert(task: ReminderTask) {
-        if (!task.isEnabled || !hasLocationPermission()) return
+        if (!task.isEnabled || task.isCompleted || !hasLocationPermission()) return
         geofencingClient.removeGeofences(listOf(requestId(task.id)))
         geofencingClient.addGeofences(
             GeofencingRequest.Builder()
