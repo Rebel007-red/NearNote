@@ -13,6 +13,15 @@ interface NearNoteDao {
     @Query("SELECT * FROM reminder_tasks ORDER BY updatedAt DESC")
     fun observeTasks(): Flow<List<ReminderTask>>
 
+    @Query("SELECT * FROM reminder_tasks ORDER BY updatedAt DESC")
+    suspend fun getTasks(): List<ReminderTask>
+
+    @Query("SELECT * FROM reminder_tasks WHERE isEnabled = 1 ORDER BY updatedAt DESC")
+    suspend fun getEnabledTasks(): List<ReminderTask>
+
+    @Query("SELECT * FROM reminder_tasks WHERE id = :taskId LIMIT 1")
+    suspend fun getTaskById(taskId: Long): ReminderTask?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTask(task: ReminderTask): Long
 

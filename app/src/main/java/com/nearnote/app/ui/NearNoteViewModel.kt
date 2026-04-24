@@ -12,16 +12,17 @@ import androidx.lifecycle.viewModelScope
 import com.nearnote.app.data.db.AppDatabase
 import com.nearnote.app.data.model.ReminderTask
 import com.nearnote.app.data.repo.ReminderRepository
+import com.nearnote.app.reminder.GeofenceScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class NearNoteViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = ReminderRepository(AppDatabase.getInstance(application).nearNoteDao())
+    private val geofenceScheduler = GeofenceScheduler(application)
     private val editorState = MutableStateFlow<ReminderEditorState?>(null)
     private val statusMessage = MutableStateFlow<String?>(null)
 
@@ -42,6 +43,12 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
             initialValue = NearNoteUiState()
         )
 
+    init {
+        viewModelScope.launch {
+            geofenceScheduler.refreshAll(repository.getEnabledTasks())
+        }
+    }
+
     fun startCreateReminder() {
         editorState.value = ReminderEditorState()
         statusMessage.value = null
@@ -50,6 +57,7 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
     fun startEditReminder(task: ReminderTask) {
         editorState.value = ReminderEditorState(
             id = task.id,
+            createdAt = task.createdAt,
             title = task.title,
             note = task.note,
             placeName = task.placeName,
@@ -76,11 +84,18 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleTask(task: ReminderTask) {
         viewModelScope.launch {
+            val updatedAt = System.currentTimeMillis()
             repository.setTaskEnabled(
                 taskId = task.id,
                 enabled = !task.isEnabled,
-                updatedAt = System.currentTimeMillis()
+                updatedAt = updatedAt
             )
+            val updatedTask = repository.getTaskById(task.id)
+            if (updatedTask?.isEnabled == true) {
+                geofenceScheduler.upsert(updatedTask)
+            } else {
+                geofenceScheduler.remove(task.id)
+            }
         }
     }
 
@@ -94,7 +109,7 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            repository.saveTask(
+            val taskId = repository.saveTask(
                 task = ReminderTask(
                     id = current.id ?: 0,
                     title = current.title.trim(),
@@ -108,10 +123,17 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
                     recurrenceType = current.recurrenceType,
                     recurrenceInterval = current.recurrenceInterval.trim().takeIf { current.recurrenceType == RECURRENCE_CUSTOM && it.isNotEmpty() }?.toInt(),
                     isEnabled = current.isEnabled,
-                    createdAt = now,
+                    createdAt = current.createdAt ?: now,
                     updatedAt = now
                 )
             )
+            repository.getTaskById(taskId)?.let { savedTask ->
+                if (savedTask.isEnabled) {
+                    geofenceScheduler.upsert(savedTask)
+                } else {
+                    geofenceScheduler.remove(savedTask.id)
+                }
+            }
             statusMessage.value = if (current.id == null) "Reminder added" else "Reminder updated"
             editorState.value = null
         }
@@ -121,6 +143,7 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
         val taskId = editorState.value?.id ?: return
         viewModelScope.launch {
             repository.deleteTask(taskId)
+            geofenceScheduler.remove(taskId)
             statusMessage.value = "Reminder deleted"
             editorState.value = null
         }
@@ -178,6 +201,7 @@ data class NearNoteUiState(
 
 data class ReminderEditorState(
     val id: Long? = null,
+    val createdAt: Long? = null,
     val title: String = "",
     val note: String = "",
     val placeName: String = "",

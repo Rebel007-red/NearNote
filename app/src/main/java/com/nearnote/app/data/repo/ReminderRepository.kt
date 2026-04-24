@@ -11,6 +11,12 @@ class ReminderRepository(
 
     suspend fun saveTask(task: ReminderTask): Long = dao.insertTask(task)
 
+    suspend fun getTaskById(taskId: Long): ReminderTask? = dao.getTaskById(taskId)
+
+    suspend fun getEnabledTasks(): List<ReminderTask> = dao.getEnabledTasks()
+
+    suspend fun getTasks(): List<ReminderTask> = dao.getTasks()
+
     suspend fun deleteTask(taskId: Long) {
         dao.deleteTask(taskId)
     }

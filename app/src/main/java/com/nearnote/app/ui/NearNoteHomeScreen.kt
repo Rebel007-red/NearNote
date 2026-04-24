@@ -1,5 +1,13 @@
 package com.nearnote.app.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +43,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -42,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nearnote.app.data.model.ReminderTask
 
@@ -50,6 +63,31 @@ import com.nearnote.app.data.model.ReminderTask
 fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val editorState = uiState.editorState
+    val context = LocalContext.current
+    var permissionVersion by remember { mutableIntStateOf(0) }
+    val hasForegroundLocation = remember(permissionVersion) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+    val hasBackgroundLocation = remember(permissionVersion) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+    val hasNotifications = remember(permissionVersion) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+    val foregroundPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { permissionVersion++ }
+    )
+    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { permissionVersion++ }
+    )
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { permissionVersion++ }
+    )
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -103,6 +141,43 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                     item {
                         HeroCard(taskCount = uiState.tasks.count { it.isEnabled })
                     }
+                    if (!hasForegroundLocation || !hasBackgroundLocation || !hasNotifications) {
+                        item {
+                            PermissionStatusCard(
+                                hasForegroundLocation = hasForegroundLocation,
+                                hasBackgroundLocation = hasBackgroundLocation,
+                                hasNotifications = hasNotifications,
+                                onRequestForeground = {
+                                    foregroundPermissionLauncher.launch(
+                                        buildList {
+                                            add(Manifest.permission.ACCESS_FINE_LOCATION)
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                add(Manifest.permission.POST_NOTIFICATIONS)
+                                            }
+                                        }.toTypedArray()
+                                    )
+                                },
+                                onRequestBackground = {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                        backgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                                    }
+                                },
+                                onRequestNotifications = {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                },
+                                onOpenSettings = {
+                                    context.startActivity(
+                                        Intent(
+                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.fromParts("package", context.packageName, null)
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                    }
                     uiState.statusMessage?.let { message ->
                         item {
                             StatusCard(message = message, onDismiss = viewModel::clearStatusMessage)
@@ -134,6 +209,71 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
             }
         }
     }
+}
+
+@Composable
+private fun PermissionStatusCard(
+    hasForegroundLocation: Boolean,
+    hasBackgroundLocation: Boolean,
+    hasNotifications: Boolean,
+    onRequestForeground: () -> Unit,
+    onRequestBackground: () -> Unit,
+    onRequestNotifications: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFFFFF7E9),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "Permissions still needed",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color(0xFF14293F),
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "Geofenced reminders need location access in the background, and notifications must be allowed to surface alerts.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF4D5966)
+            )
+            PermissionRow(label = "Foreground location", granted = hasForegroundLocation)
+            PermissionRow(label = "Background location", granted = hasBackgroundLocation)
+            PermissionRow(label = "Notifications", granted = hasNotifications)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!hasForegroundLocation) {
+                    OutlinedButton(onClick = onRequestForeground) {
+                        Text("Grant location")
+                    }
+                }
+                if (!hasNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    OutlinedButton(onClick = onRequestNotifications) {
+                        Text("Grant notifications")
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!hasBackgroundLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    OutlinedButton(onClick = onRequestBackground) {
+                        Text("Grant background")
+                    }
+                }
+                TextButton(onClick = onOpenSettings) {
+                    Text("Open app settings")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(label: String, granted: Boolean) {
+    Text(
+        text = if (granted) "$label: granted" else "$label: missing",
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (granted) Color(0xFF17633A) else Color(0xFF9C3E00)
+    )
 }
 
 @Composable
