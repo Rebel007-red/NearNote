@@ -19,6 +19,9 @@ interface NearNoteDao {
     @Update
     suspend fun updateTask(task: ReminderTask)
 
+    @Query("DELETE FROM reminder_tasks WHERE id = :taskId")
+    suspend fun deleteTask(taskId: Long)
+
     @Query("UPDATE reminder_tasks SET isEnabled = :enabled, updatedAt = :updatedAt WHERE id = :taskId")
     suspend fun setTaskEnabled(taskId: Long, enabled: Boolean, updatedAt: Long)
 }

@@ -9,6 +9,12 @@ class ReminderRepository(
 ) {
     fun observeTasks(): Flow<List<ReminderTask>> = dao.observeTasks()
 
+    suspend fun saveTask(task: ReminderTask): Long = dao.insertTask(task)
+
+    suspend fun deleteTask(taskId: Long) {
+        dao.deleteTask(taskId)
+    }
+
     suspend fun setTaskEnabled(taskId: Long, enabled: Boolean, updatedAt: Long) {
         dao.setTaskEnabled(taskId, enabled, updatedAt)
     }
