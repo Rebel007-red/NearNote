@@ -46,8 +46,17 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Check signing secrets availability
+        id: signing
+        run: |
+          if [ -n "${{ secrets.NEARNOTE_KEYSTORE_BASE64 }}" ] && [ -n "${{ secrets.NEARNOTE_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.NEARNOTE_KEY_ALIAS }}" ] && [ -n "${{ secrets.NEARNOTE_KEY_PASSWORD }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Prepare release keystore from secrets
-        if: ${{ secrets.NEARNOTE_KEYSTORE_BASE64 != '' }}
+        if: ${{ steps.signing.outputs.available == 'true' }}
         run: |
           echo "${{ secrets.NEARNOTE_KEYSTORE_BASE64 }}" | base64 --decode > $RUNNER_TEMP/nearnote-release.jks
           echo "NEARNOTE_KEYSTORE_PATH=$RUNNER_TEMP/nearnote-release.jks" >> $GITHUB_ENV
@@ -59,7 +68,7 @@ jobs:
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Build release APK
-        if: ${{ secrets.NEARNOTE_KEYSTORE_BASE64 != '' }}
+        if: ${{ steps.signing.outputs.available == 'true' }}
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Prepare debug APK artifact
