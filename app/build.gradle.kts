@@ -21,9 +21,33 @@ android {
         }
     }
 
+    val releaseKeystorePath = System.getenv("NEARNOTE_KEYSTORE_PATH")
+    val releaseKeystorePassword = System.getenv("NEARNOTE_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = System.getenv("NEARNOTE_KEY_ALIAS")
+    val releaseKeyPassword = System.getenv("NEARNOTE_KEY_PASSWORD")
+
+    signingConfigs {
+        create("release") {
+            if (!releaseKeystorePath.isNullOrBlank()) {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (
+                !releaseKeystorePath.isNullOrBlank() &&
+                !releaseKeystorePassword.isNullOrBlank() &&
+                !releaseKeyAlias.isNullOrBlank() &&
+                !releaseKeyPassword.isNullOrBlank()
+            ) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

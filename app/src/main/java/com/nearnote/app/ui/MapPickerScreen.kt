@@ -1,5 +1,7 @@
 package com.nearnote.app.ui
 
+import android.Manifest
+import android.annotation.SuppressLint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationServices
 import com.nearnote.app.location.PlaceSearchHelper
 import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
@@ -54,11 +58,17 @@ fun MapPickerScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val helper = remember { PlaceSearchHelper(context) }
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    val hasFineLocation = remember {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
 
     var searchQuery by remember { mutableStateOf(placeName) }
-    var selectedLatitude by remember { mutableDoubleStateOf(initialLatitude.takeIf { it != 0.0 } ?: 28.6139) }
-    var selectedLongitude by remember { mutableDoubleStateOf(initialLongitude.takeIf { it != 0.0 } ?: 77.2090) }
+    var selectedLatitude by remember { mutableDoubleStateOf(initialLatitude.takeIf { it != 0.0 } ?: 0.0) }
+    var selectedLongitude by remember { mutableDoubleStateOf(initialLongitude.takeIf { it != 0.0 } ?: 0.0) }
     var isSearching by remember { mutableStateOf(false) }
+    var isLocating by remember { mutableStateOf(false) }
+    var hasCenteredOnUser by remember { mutableStateOf(initialLatitude != 0.0 && initialLongitude != 0.0) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var touchDownX by remember { mutableStateOf(0f) }
     var touchDownY by remember { mutableStateOf(0f) }
@@ -66,6 +76,48 @@ fun MapPickerScreen(
 
     LaunchedEffect(Unit) {
         Configuration.getInstance().load(context, android.preference.PreferenceManager.getDefaultSharedPreferences(context))
+    }
+
+    @SuppressLint("MissingPermission")
+    fun recenterToUser() {
+        if (!hasFineLocation) return
+        isLocating = true
+        fusedLocationClient.lastLocation
+            .addOnSuccessListener { location ->
+                if (location != null) {
+                    selectedLatitude = location.latitude
+                    selectedLongitude = location.longitude
+                    updateMapMarker(mapView, location.latitude, location.longitude, radiusMeters, "Your location")
+                    mapView?.controller?.animateTo(GeoPoint(location.latitude, location.longitude))
+                    mapView?.controller?.setZoom(17.0)
+                    hasCenteredOnUser = true
+                } else if (!hasCenteredOnUser) {
+                    selectedLatitude = 28.6139
+                    selectedLongitude = 77.2090
+                    updateMapMarker(mapView, selectedLatitude, selectedLongitude, radiusMeters, "Selected location")
+                    hasCenteredOnUser = true
+                }
+                isLocating = false
+            }
+            .addOnFailureListener {
+                isLocating = false
+                if (!hasCenteredOnUser) {
+                    selectedLatitude = 28.6139
+                    selectedLongitude = 77.2090
+                    updateMapMarker(mapView, selectedLatitude, selectedLongitude, radiusMeters, "Selected location")
+                    hasCenteredOnUser = true
+                }
+            }
+    }
+
+    LaunchedEffect(hasFineLocation, hasCenteredOnUser) {
+        if (hasFineLocation && !hasCenteredOnUser) {
+            recenterToUser()
+        } else if (!hasFineLocation && !hasCenteredOnUser) {
+            selectedLatitude = 28.6139
+            selectedLongitude = 77.2090
+            hasCenteredOnUser = true
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -83,7 +135,12 @@ fun MapPickerScreen(
                         setMultiTouchControls(true)
                         zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                         controller.setZoom(16.0)
-                        controller.setCenter(GeoPoint(selectedLatitude, selectedLongitude))
+                        controller.setCenter(
+                            GeoPoint(
+                                if (selectedLatitude == 0.0) 28.6139 else selectedLatitude,
+                                if (selectedLongitude == 0.0) 77.2090 else selectedLongitude
+                            )
+                        )
                         setOnTouchListener { v, event ->
                             when (event.actionMasked) {
                                 android.view.MotionEvent.ACTION_DOWN -> {
@@ -114,7 +171,13 @@ fun MapPickerScreen(
                             }
                             false
                         }
-                        updateMapMarker(this, selectedLatitude, selectedLongitude, radiusMeters, "Current location")
+                        updateMapMarker(
+                            this,
+                            if (selectedLatitude == 0.0) 28.6139 else selectedLatitude,
+                            if (selectedLongitude == 0.0) 77.2090 else selectedLongitude,
+                            radiusMeters,
+                            if (hasFineLocation) "Your location" else "Selected location"
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -161,6 +224,13 @@ fun MapPickerScreen(
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
                         Text("Go")
+                    }
+                    OutlinedButton(
+                        onClick = { recenterToUser() },
+                        enabled = hasFineLocation && !isLocating,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(if (isLocating) "Locating" else "My location")
                     }
                 }
             }
