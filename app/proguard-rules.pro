@@ -1,0 +1,1 @@
+# NearNote release rules

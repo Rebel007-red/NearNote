@@ -1,0 +1,46 @@
+# Built outputs
+/build
+app/build
+
+# Gradle
+.gradle
+/.kotlin/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Android local config
+local.properties
+keystore.properties
+
+# IntelliJ / Android Studio
+*.iml
+.idea/
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Native build
+.externalNativeBuild/
+.cxx/
+
+# Captures, profiling
+/captures
+*.hprof
+
+# Signing keystores
+*.jks
+*.keystore
+*.pem
+*.p12
+
+# Packaged outputs
+*.apk
+*.aab
+*.ap_

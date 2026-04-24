@@ -1,0 +1,15 @@
+package com.nearnote.app.data.repo
+
+import com.nearnote.app.data.db.NearNoteDao
+import com.nearnote.app.data.model.ReminderTask
+import kotlinx.coroutines.flow.Flow
+
+class ReminderRepository(
+    private val dao: NearNoteDao
+) {
+    fun observeTasks(): Flow<List<ReminderTask>> = dao.observeTasks()
+
+    suspend fun setTaskEnabled(taskId: Long, enabled: Boolean, updatedAt: Long) {
+        dao.setTaskEnabled(taskId, enabled, updatedAt)
+    }
+}
