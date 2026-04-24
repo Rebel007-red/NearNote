@@ -65,48 +65,12 @@ fun MapPickerScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Search bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFFFDFBF7))
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // Map container (takes up remaining space)
+        Box(modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = { Text("Search place") },
-                placeholder = { Text("e.g., pharmacy") },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium
-            )
-            Button(
-                onClick = {
-                    if (searchQuery.isNotBlank()) {
-                        isSearching = true
-                        scope.launch {
-                            val results = helper.searchPlaces(searchQuery)
-                            results.firstOrNull()?.let { place ->
-                                selectedLatitude = place.latitude
-                                selectedLongitude = place.longitude
-                                mapView?.controller?.animateTo(GeoPoint(place.latitude, place.longitude))
-                                updateMapMarker(mapView, place.latitude, place.longitude, radiusMeters, place.name)
-                            }
-                            isSearching = false
-                        }
-                    }
-                },
-                modifier = Modifier.padding(top = 4.dp)
-            ) {
-                Text("Go")
-            }
-        }
-
-        // Map view
-        Box(modifier = Modifier.weight(1f)) {
+            // Map view - full background
             AndroidView(
                 factory = { ctx ->
                     MapView(ctx).apply {
@@ -132,7 +96,52 @@ fun MapPickerScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Searching overlay
+            // Floating search bar overlay (stays on top)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .background(Color(0xF0FFF4E8))
+                    .padding(12.dp)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("Search place") },
+                        placeholder = { Text("e.g., pharmacy") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+                    Button(
+                        onClick = {
+                            if (searchQuery.isNotBlank()) {
+                                isSearching = true
+                                scope.launch {
+                                    val results = helper.searchPlaces(searchQuery)
+                                    results.firstOrNull()?.let { place ->
+                                        selectedLatitude = place.latitude
+                                        selectedLongitude = place.longitude
+                                        // Update marker first, then animate to avoid double-redraw
+                                        updateMapMarker(mapView, place.latitude, place.longitude, radiusMeters, place.name)
+                                        mapView?.controller?.animateTo(GeoPoint(place.latitude, place.longitude))
+                                    }
+                                    isSearching = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text("Go")
+                    }
+                }
+            }
+
+            // Searching overlay (centered on map)
             if (isSearching) {
                 Surface(
                     color = Color(0xAA000000),
@@ -148,7 +157,7 @@ fun MapPickerScreen(
             }
         }
 
-        // Bottom info and confirm
+        // Bottom info and confirm (outside Box, part of Column)
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color(0xFFFDFBF7)
@@ -194,6 +203,8 @@ private fun updateMapMarker(
     label: String
 ) {
     if (mapView == null) return
+    
+    // Batch updates to reduce re-composition
     mapView.overlays.clear()
 
     // Add marker
@@ -221,6 +232,8 @@ private fun updateMapMarker(
         fillPaint.color = android.graphics.Color.parseColor("#20FFC66D")
     }
     mapView.overlays.add(polygon)
+    
+    // Single invalidate call instead of multiple redraws
     mapView.invalidate()
 }
 
