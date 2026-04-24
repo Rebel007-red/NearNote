@@ -450,6 +450,7 @@ private fun ReminderEditorScreen(
     onClearStatus: () -> Unit
 ) {
     var showPlacePicker by remember { mutableStateOf(false) }
+    var showMapPicker by remember { mutableStateOf(false) }
 
     if (showPlacePicker) {
         PlacePickerSheet(
@@ -464,6 +465,26 @@ private fun ReminderEditorScreen(
                 )
             },
             onDismiss = { showPlacePicker = false }
+        )
+        return
+    }
+
+    if (showMapPicker) {
+        MapPickerScreen(
+            initialLatitude = editorState.latitude.toDoubleOrNull() ?: 0.0,
+            initialLongitude = editorState.longitude.toDoubleOrNull() ?: 0.0,
+            radiusMeters = editorState.radiusMeters.toIntOrNull() ?: 250,
+            placeName = editorState.placeName,
+            onPlaceSelected = { lat, lon, place ->
+                onEditorChange(
+                    editorState.copy(
+                        placeName = place,
+                        latitude = lat.toString(),
+                        longitude = lon.toString()
+                    )
+                )
+            },
+            onDismiss = { showMapPicker = false }
         )
         return
     }
@@ -527,6 +548,12 @@ private fun ReminderEditorScreen(
                 modifier = Modifier.padding(top = 8.dp)
             ) {
                 Text("Search")
+            }
+            OutlinedButton(
+                onClick = { showMapPicker = true },
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                Text("Map")
             }
         }
 
