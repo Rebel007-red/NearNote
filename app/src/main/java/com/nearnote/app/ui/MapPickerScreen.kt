@@ -3,7 +3,6 @@ package com.nearnote.app.ui
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
-import android.location.Location
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -46,16 +45,36 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
+import com.nearnote.app.location.OsrmRoutingHelper
 import com.nearnote.app.location.PlaceSearchHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
+
+// CartoDB dark map tile source — free, no API key (custom style like Google Maps dark mode)
+private val CARTO_DARK = object : OnlineTileSourceBase(
+    "CartoDB_DarkMatter", 0, 19, 256, ".png",
+    arrayOf(
+        "https://a.basemaps.cartocdn.com/dark_all/",
+        "https://b.basemaps.cartocdn.com/dark_all/",
+        "https://c.basemaps.cartocdn.com/dark_all/"
+    )
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        return baseUrl + "$zoom/$x/$y.png"
+    }
+}
 
 private val mapFallback = GeoPoint(28.6139, 77.2090)
 private val poiChips = listOf("Pharmacy", "Fuel", "ATM", "Hospital", "Restaurant")
@@ -98,17 +117,19 @@ fun MapPickerScreen(
     var touchDownY by remember { mutableStateOf(0f) }
     var touchMoved by remember { mutableStateOf(false) }
 
-    val distanceKm = remember(selectedLatitude, selectedLongitude, currentLatitude, currentLongitude) {
-        if (selectedLatitude == 0.0 || selectedLongitude == 0.0 || currentLatitude == 0.0 || currentLongitude == 0.0) {
-            0.0
-        } else {
-            val result = FloatArray(1)
-            Location.distanceBetween(currentLatitude, currentLongitude, selectedLatitude, selectedLongitude, result)
-            result[0] / 1000.0
-        }
-    }
-    val etaMinutes = remember(distanceKm) {
-        if (distanceKm <= 0.0) 0 else ((distanceKm / 25.0) * 60.0).toInt().coerceAtLeast(1)
+    // Route from OSRM (real road routing)
+    var routePoints by remember { mutableStateOf<List<org.osmdroid.util.GeoPoint>>(emptyList()) }
+    var routeDistanceKm by remember { mutableDoubleStateOf(0.0) }
+    var routeEtaMinutes by remember { mutableStateOf(0) }
+    var isFetchingRoute by remember { mutableStateOf(false) }
+
+    // Custom map style toggle (article Step 4: Customizing Map Styles)
+    var isDarkMap by remember { mutableStateOf(false) }
+
+    // Swap tile source when style changes
+    LaunchedEffect(isDarkMap) {
+        mapView?.setTileSource(if (isDarkMap) CARTO_DARK else TileSourceFactory.MAPNIK)
+        mapView?.invalidate()
     }
 
     LaunchedEffect(Unit) {
@@ -196,6 +217,32 @@ fun MapPickerScreen(
                 selectedName = place.name
             }
         }
+    }
+
+    // Fetch real driving route via OSRM whenever origin or destination changes
+    LaunchedEffect(currentLatitude, currentLongitude, selectedLatitude, selectedLongitude) {
+        if (currentLatitude == 0.0 || currentLongitude == 0.0 ||
+            selectedLatitude == 0.0 || selectedLongitude == 0.0) return@LaunchedEffect
+        isFetchingRoute = true
+        val result = OsrmRoutingHelper.getRoute(
+            fromLat = currentLatitude, fromLon = currentLongitude,
+            toLat = selectedLatitude, toLon = selectedLongitude
+        )
+        if (result != null) {
+            routeDistanceKm = result.distanceMeters / 1000.0
+            routeEtaMinutes = (result.durationSeconds / 60.0).toInt().coerceAtLeast(1)
+            routePoints = result.polylinePoints
+            updateMapOverlays(
+                mapView = mapView,
+                latitude = selectedLatitude,
+                longitude = selectedLongitude,
+                radiusMeters = radiusMeters,
+                label = selectedName,
+                snippet = selectedAddress,
+                routePoints = result.polylinePoints
+            )
+        }
+        isFetchingRoute = false
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -410,25 +457,50 @@ fun MapPickerScreen(
                 }
             }
 
-            Surface(
-                shape = CircleShape,
-                shadowElevation = 8.dp,
-                color = Color.White,
+            // Floating buttons column — style toggle + location recentre
+            Column(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 12.dp)
-                    .size(46.dp)
+                    .padding(end = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                IconButton(onClick = { recenterToUser(updateSelection = false) }, enabled = hasFineLocation && !isLocating) {
-                    if (isLocating) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
+                // Map style toggle (dark / light — article Step 4)
+                Surface(
+                    shape = CircleShape,
+                    shadowElevation = 8.dp,
+                    color = if (isDarkMap) Color(0xFF1F2937) else Color.White,
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    IconButton(onClick = { isDarkMap = !isDarkMap }) {
                         Text(
-                            text = "◎",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color(0xFF111827),
-                            fontWeight = FontWeight.Bold
+                            text = if (isDarkMap) "☀" else "🌙",
+                            style = MaterialTheme.typography.titleSmall
                         )
+                    }
+                }
+
+                // Recenter to user location
+                Surface(
+                    shape = CircleShape,
+                    shadowElevation = 8.dp,
+                    color = if (isDarkMap) Color(0xFF1F2937) else Color.White,
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    IconButton(onClick = { recenterToUser(updateSelection = false) }, enabled = hasFineLocation && !isLocating) {
+                        if (isLocating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = if (isDarkMap) Color.White else Color(0xFF2563EB)
+                            )
+                        } else {
+                            Text(
+                                text = "◎",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (isDarkMap) Color.White else Color(0xFF111827),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -478,7 +550,9 @@ fun MapPickerScreen(
                         color = Color(0xFFF3F4F6)
                     ) {
                         Text(
-                            text = if (distanceKm > 0) String.format("%.1f km", distanceKm) else "-- km",
+                            text = if (isFetchingRoute) "... km"
+                                   else if (routeDistanceKm > 0) String.format("%.1f km", routeDistanceKm)
+                                   else "-- km",
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.labelLarge,
                             color = Color(0xFF374151)
@@ -489,7 +563,9 @@ fun MapPickerScreen(
                         color = Color(0xFFFFF7ED)
                     ) {
                         Text(
-                            text = if (etaMinutes > 0) "$etaMinutes min" else "-- min",
+                            text = if (isFetchingRoute) "... min"
+                                   else if (routeEtaMinutes > 0) "$routeEtaMinutes min"
+                                   else "-- min",
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.labelLarge,
                             color = Color(0xFF9A3412)
@@ -542,14 +618,30 @@ private fun updateMapOverlays(
     latitude: Double,
     longitude: Double,
     radiusMeters: Int,
-    label: String
+    label: String,
+    snippet: String = "",
+    routePoints: List<GeoPoint> = emptyList()
 ) {
     if (mapView == null) return
     mapView.overlays.clear()
 
+    // Draw route polyline (Directions API equivalent via OSRM)
+    if (routePoints.size >= 2) {
+        val polyline = org.osmdroid.views.overlay.Polyline(mapView).apply {
+            setPoints(routePoints)
+            outlinePaint.color = android.graphics.Color.parseColor("#2563EB")  // Uber blue
+            outlinePaint.strokeWidth = 8f
+            outlinePaint.alpha = 200
+            outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+            outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+        mapView.overlays.add(polyline)
+    }
+
     val marker = Marker(mapView).apply {
         position = GeoPoint(latitude, longitude)
         title = label
+        if (snippet.isNotBlank()) this.snippet = snippet
     }
     mapView.overlays.add(marker)
 
