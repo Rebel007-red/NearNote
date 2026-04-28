@@ -70,9 +70,10 @@ private val glassStroke = Color(0x66FFFFFF)
 @Composable
 fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showCompleted by rememberSaveable { mutableStateOf(false) }
-    val completedCount = uiState.tasks.count { it.isCompleted }
-    val visibleTasks = if (showCompleted) uiState.tasks else uiState.tasks.filter { !it.isCompleted }
+    var showCompletedSection by rememberSaveable { mutableStateOf(false) }
+    val activeTasks = uiState.tasks.filter { !it.isCompleted }
+    val completedTasks = uiState.tasks.filter { it.isCompleted }
+    val completedCount = completedTasks.size
     val editorState = uiState.editorState
     val context = LocalContext.current
     var permissionVersion by remember { mutableIntStateOf(0) }
@@ -150,29 +151,7 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     item {
-                        HeroCard(taskCount = visibleTasks.count { it.isEnabled })
-                    }
-                    if (completedCount > 0) {
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                FilterChip(
-                                    selected = showCompleted,
-                                    onClick = { showCompleted = !showCompleted },
-                                    label = {
-                                        Text(
-                                            if (showCompleted) {
-                                                "Hide completed ($completedCount)"
-                                            } else {
-                                                "Show completed ($completedCount)"
-                                            }
-                                        )
-                                    }
-                                )
-                            }
-                        }
+                        HeroCard(taskCount = activeTasks.count { it.isEnabled })
                     }
                     if (!hasForegroundLocation || !hasBackgroundLocation || !hasNotifications) {
                         item {
@@ -216,18 +195,60 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                             StatusCard(message = message, onDismiss = viewModel::clearStatusMessage)
                         }
                     }
-                    if (visibleTasks.isEmpty()) {
+                    if (activeTasks.isEmpty()) {
                         item {
                             EmptyStateCard(onAddReminder = viewModel::startCreateReminder)
                         }
                     }
-                    items(visibleTasks, key = { it.id }) { task ->
+                    items(activeTasks, key = { it.id }) { task ->
                         ReminderTaskCard(
                             task = task,
                             onToggle = { viewModel.toggleTask(task) },
                             onToggleCompleted = { viewModel.toggleTaskCompleted(task) },
                             onEdit = { viewModel.startEditReminder(task) }
                         )
+                    }
+                    if (completedCount > 0) {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                FilterChip(
+                                    selected = showCompletedSection,
+                                    onClick = { showCompletedSection = !showCompletedSection },
+                                    label = {
+                                        Text(
+                                            if (showCompletedSection) {
+                                                "Hide completed ($completedCount)"
+                                            } else {
+                                                "Show completed ($completedCount)"
+                                            }
+                                        )
+                                    }
+                                )
+                                if (showCompletedSection) {
+                                    TextButton(onClick = viewModel::clearAllCompleted) {
+                                        Text(
+                                            text = "Clear all",
+                                            color = Color(0xFFDC2626),
+                                            style = MaterialTheme.typography.labelLarge
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (showCompletedSection) {
+                        items(completedTasks, key = { "completed-${it.id}" }) { task ->
+                            ReminderTaskCard(
+                                task = task,
+                                onToggle = { viewModel.toggleTask(task) },
+                                onToggleCompleted = { viewModel.toggleTaskCompleted(task) },
+                                onEdit = { viewModel.startEditReminder(task) }
+                            )
+                        }
                     }
                 }
             } else {
@@ -408,10 +429,14 @@ private fun ReminderTaskCard(
     onToggleCompleted: () -> Unit,
     onEdit: () -> Unit
 ) {
+    val cardColor = if (task.isCompleted) Color(0xCCF1F3F5) else glassPanel
+    val titleColor = if (task.isCompleted) Color(0xFF9CA3AF) else Color(0xFF14293F)
+    val subtitleColor = if (task.isCompleted) Color(0xFFBBC4CE) else Color(0xFF496580)
+
     Card(
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = glassPanel),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (task.isCompleted) 0.dp else 3.dp),
         modifier = Modifier.clickable(onClick = onEdit)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
@@ -425,13 +450,13 @@ private fun ReminderTaskCard(
                         text = task.title,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF14293F)
+                        color = titleColor
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = task.placeName,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color(0xFF496580)
+                        color = subtitleColor
                     )
                 }
                 Switch(checked = task.isEnabled, onCheckedChange = { onToggle() })

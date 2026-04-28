@@ -39,4 +39,7 @@ interface NearNoteDao {
 
     @Query("UPDATE reminder_tasks SET lastFiredAt = :firedAt WHERE id = :taskId")
     suspend fun setLastFiredAt(taskId: Long, firedAt: Long)
+
+    @Query("DELETE FROM reminder_tasks WHERE isCompleted = 1")
+    suspend fun deleteAllCompleted()
 }

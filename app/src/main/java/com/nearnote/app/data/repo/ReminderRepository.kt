@@ -32,4 +32,8 @@ class ReminderRepository(
     suspend fun setLastFiredAt(taskId: Long, firedAt: Long) {
         dao.setLastFiredAt(taskId, firedAt)
     }
+
+    suspend fun deleteAllCompleted() {
+        dao.deleteAllCompleted()
+    }
 }

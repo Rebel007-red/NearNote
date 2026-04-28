@@ -174,6 +174,13 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
         statusMessage.value = null
     }
 
+    fun clearAllCompleted() {
+        viewModelScope.launch {
+            repository.deleteAllCompleted()
+            statusMessage.value = "Completed reminders cleared"
+        }
+    }
+
     private fun validate(editor: ReminderEditorState): String? {
         if (editor.title.isBlank()) return "Add a reminder title"
         if (editor.placeName.isBlank()) return "Add a place name"
