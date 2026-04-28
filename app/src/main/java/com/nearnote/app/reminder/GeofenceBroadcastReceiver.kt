@@ -3,6 +3,7 @@ package com.nearnote.app.reminder
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.core.app.NotificationManagerCompat
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
 import com.nearnote.app.data.db.AppDatabase
@@ -14,6 +15,27 @@ import java.util.concurrent.TimeUnit
 
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == NotificationHelper.ACTION_MARK_COMPLETED) {
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val taskId = intent.getLongExtra(NotificationHelper.EXTRA_TASK_ID, -1L)
+                    if (taskId > 0L) {
+                        val repository = ReminderRepository(AppDatabase.getInstance(context).nearNoteDao())
+                        repository.setTaskCompleted(taskId, true, System.currentTimeMillis())
+                        GeofenceScheduler(context).remove(taskId)
+                    }
+                    val notificationId = intent.getIntExtra(NotificationHelper.EXTRA_NOTIFICATION_ID, -1)
+                    if (notificationId >= 0) {
+                        NotificationManagerCompat.from(context).cancel(notificationId)
+                    }
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
+
         val event = GeofencingEvent.fromIntent(intent) ?: return
         if (event.hasError()) return
 

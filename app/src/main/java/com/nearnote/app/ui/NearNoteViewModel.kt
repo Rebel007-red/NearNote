@@ -66,6 +66,7 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
             radiusMeters = task.radiusMeters.toString(),
             triggerMode = task.triggerMode,
             dwellMinutes = task.dwellMinutes.toString(),
+            priority = task.priority,
             recurrenceType = task.recurrenceType,
             recurrenceInterval = task.recurrenceInterval?.toString().orEmpty(),
             isEnabled = task.isEnabled,
@@ -138,6 +139,7 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
                     radiusMeters = current.radiusMeters.trim().toInt(),
                     triggerMode = current.triggerMode,
                     dwellMinutes = if (current.triggerMode == TRIGGER_ENTER) 0 else current.dwellMinutes.trim().toInt(),
+                    priority = current.priority,
                     recurrenceType = current.recurrenceType,
                     recurrenceInterval = current.recurrenceInterval.trim().takeIf { current.recurrenceType == RECURRENCE_CUSTOM && it.isNotEmpty() }?.toInt(),
                     isEnabled = current.isEnabled,
@@ -204,6 +206,10 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
         const val TRIGGER_ENTER_DWELL = "ENTER_DWELL"
         const val TRIGGER_EXIT = "EXIT"
 
+        const val PRIORITY_LOW = "LOW"
+        const val PRIORITY_MEDIUM = "MEDIUM"
+        const val PRIORITY_HIGH = "HIGH"
+
         const val RECURRENCE_ONCE = "ONCE"
         const val RECURRENCE_DAILY = "DAILY"
         const val RECURRENCE_WEEKLY = "WEEKLY"
@@ -229,6 +235,7 @@ data class ReminderEditorState(
     val radiusMeters: String = "250",
     val triggerMode: String = NearNoteViewModel.TRIGGER_ENTER_DWELL,
     val dwellMinutes: String = "2",
+    val priority: String = NearNoteViewModel.PRIORITY_MEDIUM,
     val recurrenceType: String = NearNoteViewModel.RECURRENCE_ONCE,
     val recurrenceInterval: String = "",
     val isEnabled: Boolean = true,

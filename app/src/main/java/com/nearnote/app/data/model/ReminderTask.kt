@@ -14,6 +14,7 @@ data class ReminderTask(
     val radiusMeters: Int = 250,
     val triggerMode: String = "ENTER_DWELL",
     val dwellMinutes: Int = 2,
+    val priority: String = "MEDIUM",
     val recurrenceType: String = "ONCE",
     val recurrenceInterval: Int? = null,
     val isEnabled: Boolean = true,

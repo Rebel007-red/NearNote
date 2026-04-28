@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
@@ -59,10 +61,18 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nearnote.app.data.model.ReminderTask
 
+private val glassPanel = Color(0xE6FFFFFF)
+private val glassPanelWarm = Color(0xE8FFF7EC)
+private val glassHero = Color(0xCC17324D)
+private val glassStroke = Color(0x66FFFFFF)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showCompleted by rememberSaveable { mutableStateOf(false) }
+    val completedCount = uiState.tasks.count { it.isCompleted }
+    val visibleTasks = if (showCompleted) uiState.tasks else uiState.tasks.filter { !it.isCompleted }
     val editorState = uiState.editorState
     val context = LocalContext.current
     var permissionVersion by remember { mutableIntStateOf(0) }
@@ -140,7 +150,29 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     item {
-                        HeroCard(taskCount = uiState.tasks.count { it.isEnabled })
+                        HeroCard(taskCount = visibleTasks.count { it.isEnabled })
+                    }
+                    if (completedCount > 0) {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                FilterChip(
+                                    selected = showCompleted,
+                                    onClick = { showCompleted = !showCompleted },
+                                    label = {
+                                        Text(
+                                            if (showCompleted) {
+                                                "Hide completed ($completedCount)"
+                                            } else {
+                                                "Show completed ($completedCount)"
+                                            }
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
                     if (!hasForegroundLocation || !hasBackgroundLocation || !hasNotifications) {
                         item {
@@ -184,12 +216,12 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                             StatusCard(message = message, onDismiss = viewModel::clearStatusMessage)
                         }
                     }
-                    if (uiState.tasks.isEmpty()) {
+                    if (visibleTasks.isEmpty()) {
                         item {
                             EmptyStateCard(onAddReminder = viewModel::startCreateReminder)
                         }
                     }
-                    items(uiState.tasks, key = { it.id }) { task ->
+                    items(visibleTasks, key = { it.id }) { task ->
                         ReminderTaskCard(
                             task = task,
                             onToggle = { viewModel.toggleTask(task) },
@@ -225,7 +257,8 @@ private fun PermissionStatusCard(
 ) {
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = Color(0xFFFFF7E9),
+        color = glassPanelWarm,
+        border = androidx.compose.foundation.BorderStroke(1.dp, glassStroke),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -282,7 +315,8 @@ private fun PermissionRow(label: String, granted: Boolean) {
 private fun HeroCard(taskCount: Int) {
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = Color(0xFF17324D),
+        color = glassHero,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66FFFFFF)),
         tonalElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -313,7 +347,8 @@ private fun HeroCard(taskCount: Int) {
 private fun EmptyStateCard(onAddReminder: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = Color(0xFFFDFBF7),
+        color = glassPanel,
+        border = androidx.compose.foundation.BorderStroke(1.dp, glassStroke),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
@@ -341,7 +376,8 @@ private fun EmptyStateCard(onAddReminder: () -> Unit) {
 private fun StatusCard(message: String, onDismiss: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = Color(0xFFFFF3D6),
+        color = Color(0xE6FFF3D6),
+        border = androidx.compose.foundation.BorderStroke(1.dp, glassStroke),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -374,8 +410,8 @@ private fun ReminderTaskCard(
 ) {
     Card(
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFDFBF7)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = glassPanel),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         modifier = Modifier.clickable(onClick = onEdit)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
@@ -413,6 +449,7 @@ private fun ReminderTaskCard(
                 Chip(label = "${task.radiusMeters}m")
                 Chip(label = task.triggerMode.replace('_', ' '))
                 Chip(label = task.recurrenceType)
+                Chip(label = task.priority)
                 if (task.isCompleted) {
                     Chip(label = "Completed")
                 }
@@ -439,7 +476,7 @@ private fun ReminderTaskCard(
 @Composable
 private fun Chip(label: String) {
     Surface(
-        color = Color(0xFFE7EEF6),
+        color = Color(0xDAEAF1FA),
         shape = RoundedCornerShape(999.dp)
     ) {
         Text(
@@ -501,6 +538,53 @@ private fun ReminderEditorScreen(
         return
     }
 
+    val titleError = if (editorState.title.isBlank()) "Title is required" else null
+    val placeError = if (editorState.placeName.isBlank()) "Place is required" else null
+    val latitudeValue = editorState.latitude.trim().toDoubleOrNull()
+    val latitudeError = when {
+        editorState.latitude.isBlank() -> "Latitude is required"
+        latitudeValue == null -> "Enter a valid latitude"
+        latitudeValue !in -90.0..90.0 -> "Must be between -90 and 90"
+        else -> null
+    }
+    val longitudeValue = editorState.longitude.trim().toDoubleOrNull()
+    val longitudeError = when {
+        editorState.longitude.isBlank() -> "Longitude is required"
+        longitudeValue == null -> "Enter a valid longitude"
+        longitudeValue !in -180.0..180.0 -> "Must be between -180 and 180"
+        else -> null
+    }
+    val radiusValue = editorState.radiusMeters.trim().toIntOrNull()
+    val radiusError = when {
+        editorState.radiusMeters.isBlank() -> "Radius is required"
+        radiusValue == null -> "Enter a whole number"
+        radiusValue !in 50..5000 -> "Must be 50m to 5000m"
+        else -> null
+    }
+    val dwellValue = editorState.dwellMinutes.trim().toIntOrNull()
+    val dwellError = if (editorState.triggerMode != NearNoteViewModel.TRIGGER_ENTER) {
+        when {
+            editorState.dwellMinutes.isBlank() -> "Dwell is required"
+            dwellValue == null -> "Enter a whole number"
+            dwellValue !in 1..120 -> "Must be 1 to 120"
+            else -> null
+        }
+    } else {
+        null
+    }
+    val intervalValue = editorState.recurrenceInterval.trim().toIntOrNull()
+    val intervalError = if (editorState.recurrenceType == NearNoteViewModel.RECURRENCE_CUSTOM) {
+        when {
+            editorState.recurrenceInterval.isBlank() -> "Interval is required"
+            intervalValue == null -> "Enter a whole number"
+            intervalValue !in 1..365 -> "Must be 1 to 365"
+            else -> null
+        }
+    } else {
+        null
+    }
+    val canSave = listOf(titleError, placeError, latitudeError, longitudeError, radiusError, dwellError, intervalError).all { it == null }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -510,7 +594,8 @@ private fun ReminderEditorScreen(
     ) {
         Surface(
             shape = RoundedCornerShape(28.dp),
-            color = Color(0xFF17324D),
+            color = glassHero,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66FFFFFF)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
@@ -537,7 +622,8 @@ private fun ReminderEditorScreen(
             label = "Task title",
             value = editorState.title,
             onValueChange = { onEditorChange(editorState.copy(title = it)) },
-            placeholder = "Pick up prescription"
+            placeholder = "Pick up prescription",
+            error = titleError
         )
         EditorTextField(
             label = "Notes",
@@ -553,7 +639,8 @@ private fun ReminderEditorScreen(
                 value = editorState.placeName,
                 onValueChange = { onEditorChange(editorState.copy(placeName = it)) },
                 placeholder = "City Pharmacy",
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                error = placeError
             )
             OutlinedButton(
                 onClick = { showPlacePicker = true },
@@ -576,7 +663,8 @@ private fun ReminderEditorScreen(
                 onValueChange = { onEditorChange(editorState.copy(latitude = it)) },
                 placeholder = "28.6139",
                 keyboardType = KeyboardType.Decimal,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                error = latitudeError
             )
             EditorTextField(
                 label = "Longitude",
@@ -584,7 +672,8 @@ private fun ReminderEditorScreen(
                 onValueChange = { onEditorChange(editorState.copy(longitude = it)) },
                 placeholder = "77.2090",
                 keyboardType = KeyboardType.Decimal,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                error = longitudeError
             )
         }
 
@@ -595,7 +684,8 @@ private fun ReminderEditorScreen(
                 onValueChange = { onEditorChange(editorState.copy(radiusMeters = it.filter(Char::isDigit))) },
                 placeholder = "250",
                 keyboardType = KeyboardType.Number,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                error = radiusError
             )
             EditorTextField(
                 label = "Dwell (min)",
@@ -604,8 +694,24 @@ private fun ReminderEditorScreen(
                 placeholder = "2",
                 keyboardType = KeyboardType.Number,
                 modifier = Modifier.weight(1f),
-                enabled = editorState.triggerMode != NearNoteViewModel.TRIGGER_ENTER
+                enabled = editorState.triggerMode != NearNoteViewModel.TRIGGER_ENTER,
+                error = dwellError
             )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("100", "250", "500", "1000").forEach { radiusPreset ->
+                FilterChip(
+                    selected = editorState.radiusMeters == radiusPreset,
+                    onClick = { onEditorChange(editorState.copy(radiusMeters = radiusPreset)) },
+                    label = { Text("${radiusPreset}m") }
+                )
+            }
         }
 
         OptionGroup(
@@ -624,6 +730,17 @@ private fun ReminderEditorScreen(
                     )
                 )
             }
+        )
+
+        OptionGroup(
+            title = "Priority",
+            options = listOf(
+                NearNoteViewModel.PRIORITY_LOW to "Low",
+                NearNoteViewModel.PRIORITY_MEDIUM to "Medium",
+                NearNoteViewModel.PRIORITY_HIGH to "High"
+            ),
+            selected = editorState.priority,
+            onSelected = { onEditorChange(editorState.copy(priority = it)) }
         )
 
         OptionGroup(
@@ -652,7 +769,8 @@ private fun ReminderEditorScreen(
                 value = editorState.recurrenceInterval,
                 onValueChange = { onEditorChange(editorState.copy(recurrenceInterval = it.filter(Char::isDigit))) },
                 placeholder = "14",
-                keyboardType = KeyboardType.Number
+                keyboardType = KeyboardType.Number,
+                error = intervalError
             )
         }
 
@@ -660,7 +778,7 @@ private fun ReminderEditorScreen(
             OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
                 Text("Cancel")
             }
-            OutlinedButton(onClick = onSave, modifier = Modifier.weight(1f)) {
+            OutlinedButton(onClick = onSave, modifier = Modifier.weight(1f), enabled = canSave) {
                 Text(if (editorState.id == null) "Save reminder" else "Update reminder")
             }
         }
@@ -682,7 +800,8 @@ private fun EditorTextField(
     modifier: Modifier = Modifier,
     keyboardType: KeyboardType = KeyboardType.Text,
     enabled: Boolean = true,
-    minLines: Int = 1
+    minLines: Int = 1,
+    error: String? = null
 ) {
     OutlinedTextField(
         value = value,
@@ -692,6 +811,12 @@ private fun EditorTextField(
         modifier = modifier.fillMaxWidth(),
         enabled = enabled,
         minLines = minLines,
+        isError = error != null,
+        supportingText = {
+            if (error != null) {
+                Text(error)
+            }
+        },
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         singleLine = minLines == 1
     )

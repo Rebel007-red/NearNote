@@ -10,7 +10,7 @@ import com.nearnote.app.data.model.ReminderTask
 
 @Database(
     entities = [ReminderTask::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,14 +28,23 @@ abstract class AppDatabase : RoomDatabase() {
                     "nearnote.db"
                 )
                     .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_3_4)
                     .build().also { instance = it }
             }
         }
 
         private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
                     "ALTER TABLE reminder_tasks ADD COLUMN isCompleted INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE reminder_tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'MEDIUM'"
                 )
             }
         }

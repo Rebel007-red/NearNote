@@ -51,7 +51,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
@@ -73,36 +72,6 @@ private val ALIDADE_SMOOTH = object : OnlineTileSourceBase(
         val x = MapTileIndex.getX(pMapTileIndex)
         val y = MapTileIndex.getY(pMapTileIndex)
         return baseUrl + "$zoom/$x/$y.png"
-    }
-}
-
-// CartoDB dark map tile source — free, no API key (custom style like Google Maps dark mode)
-private val CARTO_DARK = object : OnlineTileSourceBase(
-    "CartoDB_DarkMatter", 0, 19, 256, ".png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/dark_all/",
-        "https://b.basemaps.cartocdn.com/dark_all/",
-        "https://c.basemaps.cartocdn.com/dark_all/"
-    )
-) {
-    override fun getTileURLString(pMapTileIndex: Long): String {
-        val zoom = MapTileIndex.getZoom(pMapTileIndex)
-        val x = MapTileIndex.getX(pMapTileIndex)
-        val y = MapTileIndex.getY(pMapTileIndex)
-        return baseUrl + "$zoom/$x/$y.png"
-    }
-}
-
-// USGS Satellite imagery — aerial view
-private val SATELLITE_VIEW = object : OnlineTileSourceBase(
-    "USGS_Satellite", 0, 16, 256, ".jpg",
-    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/")
-) {
-    override fun getTileURLString(pMapTileIndex: Long): String {
-        val zoom = MapTileIndex.getZoom(pMapTileIndex)
-        val x = MapTileIndex.getX(pMapTileIndex)
-        val y = MapTileIndex.getY(pMapTileIndex)
-        return baseUrl + "$zoom/$y/$x"
     }
 }
 
@@ -152,21 +121,6 @@ fun MapPickerScreen(
     var routeDistanceKm by remember { mutableDoubleStateOf(0.0) }
     var routeEtaMinutes by remember { mutableStateOf(0) }
     var isFetchingRoute by remember { mutableStateOf(false) }
-
-    // Map style selector: 0=Light (Alidade), 1=Dark (CartoDB), 2=Satellite
-    var mapStyleMode by remember { mutableStateOf(0) }
-
-    // Swap tile source when style changes
-    LaunchedEffect(mapStyleMode) {
-        val tileSource = when (mapStyleMode) {
-            0 -> ALIDADE_SMOOTH    // Light mode (default)
-            1 -> CARTO_DARK         // Dark mode
-            2 -> SATELLITE_VIEW     // Satellite imagery
-            else -> ALIDADE_SMOOTH
-        }
-        mapView?.setTileSource(tileSource)
-        mapView?.invalidate()
-    }
 
     LaunchedEffect(Unit) {
         Configuration.getInstance().load(context, android.preference.PreferenceManager.getDefaultSharedPreferences(context))
@@ -494,77 +448,29 @@ fun MapPickerScreen(
                 }
             }
 
-            // Floating buttons column — map style cycle + location recentre
-            Column(
+            Surface(
+                shape = CircleShape,
+                shadowElevation = 8.dp,
+                color = Color.White,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(end = 12.dp)
+                    .size(46.dp)
             ) {
-                // Map style cycle button (Light → Dark → Satellite)
-                Surface(
-                    shape = CircleShape,
-                    shadowElevation = 8.dp,
-                    color = when (mapStyleMode) {
-                        0 -> Color(0xFFF3F4F6)  // Light: light gray bg
-                        1 -> Color(0xFF1F2937)  // Dark: dark gray bg
-                        2 -> Color(0xFF8B7355)  // Satellite: brown-ish bg
-                        else -> Color.White
-                    },
-                    modifier = Modifier.size(46.dp)
-                ) {
-                    IconButton(onClick = { mapStyleMode = (mapStyleMode + 1) % 3 }) {
-                        Text(
-                            text = when (mapStyleMode) {
-                                0 -> "☀"   // Light: sun
-                                1 -> "🌙"   // Dark: moon
-                                2 -> "🛰"   // Satellite: satellite
-                                else -> "?"
-                            },
-                            style = MaterialTheme.typography.titleSmall,
-                            color = when (mapStyleMode) {
-                                0 -> Color(0xFF111827)
-                                1 -> Color.White
-                                2 -> Color.White
-                                else -> Color.Black
-                            }
+                IconButton(onClick = { recenterToUser(updateSelection = false) }, enabled = hasFineLocation && !isLocating) {
+                    if (isLocating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF2563EB)
                         )
-                    }
-                }
-
-                // Recenter to user location
-                Surface(
-                    shape = CircleShape,
-                    shadowElevation = 8.dp,
-                    color = when (mapStyleMode) {
-                        0 -> Color.White
-                        1 -> Color(0xFF1F2937)
-                        2 -> Color(0xFF8B7355)
-                        else -> Color.White
-                    },
-                    modifier = Modifier.size(46.dp)
-                ) {
-                    IconButton(onClick = { recenterToUser(updateSelection = false) }, enabled = hasFineLocation && !isLocating) {
-                        if (isLocating) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = when (mapStyleMode) {
-                                    0 -> Color(0xFF2563EB)
-                                    else -> Color.White
-                                }
-                            )
-                        } else {
-                            Text(
-                                text = "◎",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = when (mapStyleMode) {
-                                    0 -> Color(0xFF111827)
-                                    else -> Color.White
-                                },
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                    } else {
+                        Text(
+                            text = "◎",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color(0xFF111827),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
