@@ -59,6 +59,23 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 
+// Alidade Smooth — modern, flat, Google Maps-like style (light mode)
+private val ALIDADE_SMOOTH = object : OnlineTileSourceBase(
+    "Alidade_Smooth", 0, 19, 256, ".png",
+    arrayOf(
+        "https://a.tile.openstreetmap.de/tiles/osmde/",
+        "https://b.tile.openstreetmap.de/tiles/osmde/",
+        "https://c.tile.openstreetmap.de/tiles/osmde/"
+    )
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        return baseUrl + "$zoom/$x/$y.png"
+    }
+}
+
 // CartoDB dark map tile source — free, no API key (custom style like Google Maps dark mode)
 private val CARTO_DARK = object : OnlineTileSourceBase(
     "CartoDB_DarkMatter", 0, 19, 256, ".png",
@@ -73,6 +90,19 @@ private val CARTO_DARK = object : OnlineTileSourceBase(
         val x = MapTileIndex.getX(pMapTileIndex)
         val y = MapTileIndex.getY(pMapTileIndex)
         return baseUrl + "$zoom/$x/$y.png"
+    }
+}
+
+// USGS Satellite imagery — aerial view
+private val SATELLITE_VIEW = object : OnlineTileSourceBase(
+    "USGS_Satellite", 0, 16, 256, ".jpg",
+    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/")
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        return baseUrl + "$zoom/$y/$x"
     }
 }
 
@@ -123,12 +153,18 @@ fun MapPickerScreen(
     var routeEtaMinutes by remember { mutableStateOf(0) }
     var isFetchingRoute by remember { mutableStateOf(false) }
 
-    // Custom map style toggle (article Step 4: Customizing Map Styles)
-    var isDarkMap by remember { mutableStateOf(false) }
+    // Map style selector: 0=Light (Alidade), 1=Dark (CartoDB), 2=Satellite
+    var mapStyleMode by remember { mutableStateOf(0) }
 
     // Swap tile source when style changes
-    LaunchedEffect(isDarkMap) {
-        mapView?.setTileSource(if (isDarkMap) CARTO_DARK else TileSourceFactory.MAPNIK)
+    LaunchedEffect(mapStyleMode) {
+        val tileSource = when (mapStyleMode) {
+            0 -> ALIDADE_SMOOTH    // Light mode (default)
+            1 -> CARTO_DARK         // Dark mode
+            2 -> SATELLITE_VIEW     // Satellite imagery
+            else -> ALIDADE_SMOOTH
+        }
+        mapView?.setTileSource(tileSource)
         mapView?.invalidate()
     }
 
@@ -255,7 +291,8 @@ fun MapPickerScreen(
                 factory = { ctx ->
                     MapView(ctx).apply {
                         mapView = this
-                        setTileSource(TileSourceFactory.MAPNIK)
+                        // Set default: Alidade Smooth (modern, Google Maps-like style)
+                        setTileSource(ALIDADE_SMOOTH)
                         setMultiTouchControls(true)
                         zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                         controller.setZoom(16.5)
@@ -457,24 +494,40 @@ fun MapPickerScreen(
                 }
             }
 
-            // Floating buttons column — style toggle + location recentre
+            // Floating buttons column — map style cycle + location recentre
             Column(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Map style toggle (dark / light — article Step 4)
+                // Map style cycle button (Light → Dark → Satellite)
                 Surface(
                     shape = CircleShape,
                     shadowElevation = 8.dp,
-                    color = if (isDarkMap) Color(0xFF1F2937) else Color.White,
+                    color = when (mapStyleMode) {
+                        0 -> Color(0xFFF3F4F6)  // Light: light gray bg
+                        1 -> Color(0xFF1F2937)  // Dark: dark gray bg
+                        2 -> Color(0xFF8B7355)  // Satellite: brown-ish bg
+                        else -> Color.White
+                    },
                     modifier = Modifier.size(46.dp)
                 ) {
-                    IconButton(onClick = { isDarkMap = !isDarkMap }) {
+                    IconButton(onClick = { mapStyleMode = (mapStyleMode + 1) % 3 }) {
                         Text(
-                            text = if (isDarkMap) "☀" else "🌙",
-                            style = MaterialTheme.typography.titleSmall
+                            text = when (mapStyleMode) {
+                                0 -> "☀"   // Light: sun
+                                1 -> "🌙"   // Dark: moon
+                                2 -> "🛰"   // Satellite: satellite
+                                else -> "?"
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                            color = when (mapStyleMode) {
+                                0 -> Color(0xFF111827)
+                                1 -> Color.White
+                                2 -> Color.White
+                                else -> Color.Black
+                            }
                         )
                     }
                 }
@@ -483,7 +536,12 @@ fun MapPickerScreen(
                 Surface(
                     shape = CircleShape,
                     shadowElevation = 8.dp,
-                    color = if (isDarkMap) Color(0xFF1F2937) else Color.White,
+                    color = when (mapStyleMode) {
+                        0 -> Color.White
+                        1 -> Color(0xFF1F2937)
+                        2 -> Color(0xFF8B7355)
+                        else -> Color.White
+                    },
                     modifier = Modifier.size(46.dp)
                 ) {
                     IconButton(onClick = { recenterToUser(updateSelection = false) }, enabled = hasFineLocation && !isLocating) {
@@ -491,13 +549,19 @@ fun MapPickerScreen(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
-                                color = if (isDarkMap) Color.White else Color(0xFF2563EB)
+                                color = when (mapStyleMode) {
+                                    0 -> Color(0xFF2563EB)
+                                    else -> Color.White
+                                }
                             )
                         } else {
                             Text(
                                 text = "◎",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = if (isDarkMap) Color.White else Color(0xFF111827),
+                                color = when (mapStyleMode) {
+                                    0 -> Color(0xFF111827)
+                                    else -> Color.White
+                                },
                                 fontWeight = FontWeight.Bold
                             )
                         }
