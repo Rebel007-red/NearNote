@@ -9,13 +9,21 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,8 +32,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +52,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,8 +71,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
@@ -67,25 +82,32 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import com.nearnote.app.data.model.ReminderTask
 
-// Glassmorphism Color Palette
-private val charcoalBg = Color(0xFF121212)
-private val charcoalSecondary = Color(0xFF1A202A)
-private val glassPanel = Color(0xCC1E232C)
-private val gradientStart = Color(0xFFC48A3A)
-private val gradientEnd = Color(0xFFB8564A)
+// Glassmorphism palette aligned with the provided CSS reference.
+private val charcoalBg = Color(0xFF111927)
+private val charcoalSecondary = Color(0xFF111927)
+private val glassPanel = Color(0xAB111928)
+private val gradientStart = Color(0xFF17B585)
+private val gradientEnd = Color(0xFF111927)
+private val radialGlowPrimary = Color(0xFF17B585)
+private val radialGlowSecondary = Color(0xFF111927)
 private val accentPrimary = Color(0xFFF0B35E)
 private val accentGold = Color(0xFFFFC107)
 private val accentRed = Color(0xFFEF5350)
 private val textLight = Color(0xFFF8FAFC)
 private val textMuted = Color(0xFFCBD5E1)
-private val glassStroke = Color(0x66FFFFFF)
+private val glassStroke = Color(0x1FFFFFFF)
+private val glassCardShape = RoundedCornerShape(12.dp)
+private val glassModalShape = RoundedCornerShape(12.dp)
 private const val GLASS_STYLE_PREFS = "glass_style_prefs"
 private const val GLASS_INTENSITY_KEY = "glass_intensity"
 private const val GLASS_BORDER_KEY = "glass_border"
@@ -119,9 +141,9 @@ private val GlassPresets = listOf(
 
 private fun tintedPanelColor(style: GlassStyle): Color {
     val base = when (style.intensity) {
-        "subtle" -> Color(0x991E232C)
-        "strong" -> Color(0xE61E232C)
-        else -> Color(0xCC1E232C)
+        "subtle" -> Color(0x8A111928)
+        "strong" -> Color(0xC9111928)
+        else -> glassPanel
     }
     val tint = when (style.tint) {
         "blue" -> Color(0xFF3B82F6)
@@ -154,10 +176,9 @@ private fun elevationFor(style: GlassStyle): androidx.compose.ui.unit.Dp {
 @Composable
 fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showCompletedSection by rememberSaveable { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val activeTasks = uiState.tasks.filter { !it.isCompleted }
     val completedTasks = uiState.tasks.filter { it.isCompleted }
-    val completedCount = completedTasks.size
     val editorState = uiState.editorState
     val context = LocalContext.current
     val glassPrefs = remember { context.getSharedPreferences(GLASS_STYLE_PREFS, Context.MODE_PRIVATE) }
@@ -195,7 +216,6 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
         inputIntensity = glassInputIntensity
     )
     val contentGlassStyle = glassStyle.copy(tint = "none")
-    var showClearCompletedConfirm by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteTaskId by rememberSaveable { mutableStateOf<Long?>(null) }
     var permissionVersion by remember { mutableIntStateOf(0) }
     val hasForegroundLocation = remember(permissionVersion) {
@@ -211,6 +231,9 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
     }
     val hasMissingPermissions = !hasForegroundLocation || !hasBackgroundLocation || !hasNotifications
     var showPermissionPopup by rememberSaveable { mutableStateOf(hasMissingPermissions) }
+    LaunchedEffect(hasMissingPermissions) {
+        showPermissionPopup = hasMissingPermissions
+    }
     val foregroundPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { permissionVersion++ }
@@ -240,7 +263,8 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                     ),
                     title = {
                         Text(
-                            text = if (editorState == null) "NearNote" else if (editorState.id == null) "Add reminder" else "Edit reminder"
+                            text = if (editorState == null) "NearNote" else if (editorState.id == null) "Add reminder" else "Edit reminder",
+                            style = MaterialTheme.typography.titleMedium
                         )
                     },
                     actions = {
@@ -253,116 +277,70 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                 )
             }
         },
-        floatingActionButton = {
-            if (editorState == null) {
-                ExtendedFloatingActionButton(
-                    onClick = viewModel::startCreateReminder
-                ) {
-                    Text("Add reminder")
-                }
-            }
-        }
+        floatingActionButton = {}
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(charcoalBg, charcoalSecondary, charcoalBg)
-                    )
-                )
+                .background(charcoalBg)
                 .padding(innerPadding)
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(radialGlowPrimary.copy(alpha = 0.42f), Color.Transparent),
+                            center = Offset(460f, 320f),
+                            radius = 920f
+                        )
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(radialGlowSecondary.copy(alpha = 0.9f), Color.Transparent),
+                            center = Offset(1100f, 1280f),
+                            radius = 1160f
+                        )
+                    )
+            )
+
             if (editorState == null) {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 20.dp, vertical = 24.dp)
-                        .padding(bottom = 120.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .padding(horizontal = 20.dp, vertical = 20.dp)
+                        .padding(bottom = 128.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    item {
-                        HeroCard(taskCount = activeTasks.count { it.isEnabled }, style = glassStyle)
-                    }
-                    item {
-                        GlassStyleSettingsCard(
-                            style = glassStyle,
-                            onApplyPreset = { preset ->
-                                glassIntensity = preset.style.intensity
-                                glassBorder = preset.style.border
-                                glassShadow = preset.style.shadow
-                                glassTint = preset.style.tint
-                                glassButtonSize = preset.style.buttonSize
-                                glassInputSize = preset.style.inputSize
-                                glassInputIntensity = preset.style.inputIntensity
-                                glassPrefs.edit()
-                                    .putString(GLASS_INTENSITY_KEY, preset.style.intensity)
-                                    .putString(GLASS_BORDER_KEY, preset.style.border)
-                                    .putString(GLASS_SHADOW_KEY, preset.style.shadow)
-                                    .putString(GLASS_TINT_KEY, preset.style.tint)
-                                    .putString(GLASS_BUTTON_SIZE_KEY, preset.style.buttonSize)
-                                    .putString(GLASS_INPUT_SIZE_KEY, preset.style.inputSize)
-                                    .putString(GLASS_INPUT_INTENSITY_KEY, preset.style.inputIntensity)
-                                    .apply()
-                            },
-                            onIntensityChange = {
-                                glassIntensity = it
-                                glassPrefs.edit().putString(GLASS_INTENSITY_KEY, it).apply()
-                            },
-                            onBorderChange = {
-                                glassBorder = it
-                                glassPrefs.edit().putString(GLASS_BORDER_KEY, it).apply()
-                            },
-                            onShadowChange = {
-                                glassShadow = it
-                                glassPrefs.edit().putString(GLASS_SHADOW_KEY, it).apply()
-                            },
-                            onTintChange = {
-                                glassTint = it
-                                glassPrefs.edit().putString(GLASS_TINT_KEY, it).apply()
-                            },
-                            onButtonSizeChange = {
-                                glassButtonSize = it
-                                glassPrefs.edit().putString(GLASS_BUTTON_SIZE_KEY, it).apply()
-                            },
-                            onInputSizeChange = {
-                                glassInputSize = it
-                                glassPrefs.edit().putString(GLASS_INPUT_SIZE_KEY, it).apply()
-                            },
-                            onInputIntensityChange = {
-                                glassInputIntensity = it
-                                glassPrefs.edit().putString(GLASS_INPUT_INTENSITY_KEY, it).apply()
+                    if (selectedTab == 0) {
+                        if (activeTasks.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "Tap + to add",
+                                    color = textMuted.copy(alpha = 0.8f),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+                                )
                             }
-                        )
-                    }
-                    if (hasMissingPermissions) {
-                        item {
-                            GlassButton(
-                                text = "Permissions required",
-                                onClick = { showPermissionPopup = true },
-                                style = glassStyle,
-                                size = glassStyle.buttonSize,
-                                variant = "outline"
+                        }
+                        items(activeTasks, key = { it.id }) { task ->
+                            ReminderCompactCard(
+                                style = contentGlassStyle,
+                                task = task,
+                                onDelete = { pendingDeleteTaskId = task.id },
+                                onToggleCompleted = { viewModel.toggleTaskCompleted(task) },
+                                onEdit = { viewModel.startEditReminder(task) }
                             )
                         }
                     }
-                    if (activeTasks.isEmpty()) {
-                        item {
-                            EmptyStateCard(onAddReminder = viewModel::startCreateReminder, style = contentGlassStyle)
-                        }
-                    }
-                    items(activeTasks, key = { it.id }) { task ->
-                        ReminderTaskCard(
-                            style = contentGlassStyle,
-                            task = task,
-                            onDelete = { pendingDeleteTaskId = task.id },
-                            onToggleCompleted = { viewModel.toggleTaskCompleted(task) },
-                            onEdit = { viewModel.startEditReminder(task) }
-                        )
-                    }
-                    if (showCompletedSection) {
+
+                    if (selectedTab == 1) {
                         items(completedTasks, key = { "completed-${it.id}" }) { task ->
-                            ReminderTaskCard(
+                            ReminderCompactCard(
                                 style = contentGlassStyle,
                                 task = task,
                                 onDelete = { pendingDeleteTaskId = task.id },
@@ -385,22 +363,11 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                 )
             }
 
-            if (showClearCompletedConfirm) {
-                GlassConfirmModal(
-                    style = glassStyle,
-                    title = "Clear completed reminders?",
-                    description = "This removes all completed reminders from history.",
-                    confirmLabel = "Clear all",
-                    dismissLabel = "Cancel",
-                    onConfirm = {
-                        viewModel.clearAllCompleted()
-                        showClearCompletedConfirm = false
-                    },
-                    onDismiss = { showClearCompletedConfirm = false }
-                )
-            }
-
-            if (hasMissingPermissions && showPermissionPopup) {
+            AnimatedVisibility(
+                visible = hasMissingPermissions && showPermissionPopup,
+                enter = fadeIn(tween(260)) + slideInVertically(tween(260)) { it / 8 },
+                exit = fadeOut(tween(180)) + slideOutVertically(tween(180)) { it / 8 }
+            ) {
                 GlassPermissionPopup(
                     style = glassStyle,
                     hasForegroundLocation = hasForegroundLocation,
@@ -438,61 +405,190 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                 )
             }
 
-            if (editorState == null && completedCount > 0) {
-                Row(
+            if (editorState == null && selectedTab == 0) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = tintedPanelColor(glassStyle).copy(alpha = 0.78f),
+                    shadowElevation = 8.dp,
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(end = 24.dp, bottom = 94.dp)
+                        .border(
+                            width = 1.dp,
+                            color = strokeFor(glassStyle),
+                            shape = RoundedCornerShape(16.dp)
+                        )
                 ) {
-                    GlassTabBar(
-                        style = glassStyle,
-                        selectedIndex = if (showCompletedSection) 1 else 0,
-                        items = listOf(
-                            "Active (${activeTasks.size})",
-                            "Completed ($completedCount)"
-                        ),
-                        onSelected = { selectedIndex -> showCompletedSection = selectedIndex == 1 },
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (showCompletedSection) {
-                        GlassButton(
-                            text = "Clear all",
-                            onClick = { showClearCompletedConfirm = true },
-                            style = glassStyle,
-                            size = glassStyle.buttonSize,
-                            variant = "outline",
-                            textColor = accentRed
+                    IconButton(
+                        onClick = viewModel::startCreateReminder,
+                        modifier = Modifier.padding(2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "Add task",
+                            tint = textLight
                         )
                     }
                 }
             }
 
-            uiState.statusMessage?.let { message ->
-                GlassStatusPopup(
-                    style = glassStyle,
-                    message = message,
-                    onDismiss = viewModel::clearStatusMessage,
+            if (editorState == null) {
+                GlassBottomNavBar(
+                    selectedIndex = selectedTab,
+                    onSelected = { selectedTab = it },
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 86.dp, start = 20.dp, end = 20.dp)
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 14.dp)
                 )
             }
 
+            AnimatedVisibility(
+                visible = uiState.statusMessage != null,
+                enter = fadeIn(tween(220)) + slideInVertically(tween(220)) { -it / 4 },
+                exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { -it / 5 },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 86.dp, start = 20.dp, end = 20.dp)
+            ) {
+                uiState.statusMessage?.let { message ->
+                    GlassStatusPopup(
+                        style = glassStyle,
+                        message = message,
+                        onDismiss = viewModel::clearStatusMessage
+                    )
+                }
+            }
+
             pendingDeleteTaskId?.let { taskId ->
-                GlassConfirmModal(
-                    style = glassStyle,
-                    title = "Delete reminder?",
-                    description = "This reminder will be removed immediately.",
-                    confirmLabel = "Delete",
-                    dismissLabel = "Cancel",
-                    onConfirm = {
-                        viewModel.deleteTask(taskId)
-                        pendingDeleteTaskId = null
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(tween(240)) + slideInVertically(tween(240)) { it / 6 },
+                    exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { it / 8 }
+                ) {
+                    GlassConfirmModal(
+                        style = glassStyle,
+                        title = "Delete reminder?",
+                        description = "This reminder will be removed immediately.",
+                        confirmLabel = "Delete",
+                        dismissLabel = "Cancel",
+                        onConfirm = {
+                            viewModel.deleteTask(taskId)
+                            pendingDeleteTaskId = null
+                        },
+                        onDismiss = { pendingDeleteTaskId = null }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReminderCompactCard(
+    style: GlassStyle = DefaultGlassStyle,
+    task: ReminderTask,
+    onDelete: () -> Unit,
+    onToggleCompleted: () -> Unit,
+    onEdit: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = tintedPanelColor(style).copy(alpha = if (task.isCompleted) 0.6f else 0.76f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .border(
+                width = 1.dp,
+                color = strokeFor(style),
+                shape = RoundedCornerShape(16.dp)
+            )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = task.title,
+                color = if (task.isCompleted) textMuted else textLight,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = "Edit",
+                        tint = textLight
+                    )
+                }
+                IconButton(onClick = onToggleCompleted) {
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = if (task.isCompleted) "Reopen" else "Complete",
+                        tint = if (task.isCompleted) textMuted else accentGold
+                    )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Delete",
+                        tint = accentRed
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GlassBottomNavBar(
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val items = listOf(
+        Triple("Active", Icons.Filled.Home, 0),
+        Triple("Completed", Icons.Filled.CheckCircle, 1),
+        Triple("Settings", Icons.Filled.Settings, 2)
+    )
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = glassPanel,
+        shadowElevation = 10.dp,
+        modifier = modifier.border(
+            width = 1.dp,
+            color = glassStroke,
+            shape = RoundedCornerShape(16.dp)
+        )
+    ) {
+        NavigationBar(
+            containerColor = Color.Transparent,
+            tonalElevation = 0.dp,
+            modifier = Modifier.height(56.dp)
+        ) {
+            items.forEach { (label, icon, index) ->
+                NavigationBarItem(
+                    selected = selectedIndex == index,
+                    onClick = { onSelected(index) },
+                    icon = {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label
+                        )
                     },
-                    onDismiss = { pendingDeleteTaskId = null }
+                    label = { Text(label) },
+                    alwaysShowLabel = true
                 )
             }
         }
@@ -512,7 +608,7 @@ private fun GlassStyleSettingsCard(
     onInputIntensityChange: (String) -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = glassCardShape,
         color = tintedPanelColor(style),
         shadowElevation = elevationFor(style),
         modifier = Modifier
@@ -520,7 +616,7 @@ private fun GlassStyleSettingsCard(
             .border(
                 width = 1.dp,
                 color = strokeFor(style),
-                shape = RoundedCornerShape(20.dp)
+                shape = glassCardShape
             )
     ) {
         Column(
@@ -637,7 +733,7 @@ private fun HeroCard(taskCount: Int, style: GlassStyle = DefaultGlassStyle) {
         colors = listOf(gradientStart, gradientEnd)
     )
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = glassCardShape,
         color = tintedPanelColor(style),
         shadowElevation = elevationFor(style),
         modifier = Modifier
@@ -646,7 +742,7 @@ private fun HeroCard(taskCount: Int, style: GlassStyle = DefaultGlassStyle) {
             .border(
                 width = 1.dp,
                 color = strokeFor(style),
-                shape = RoundedCornerShape(20.dp)
+                shape = glassCardShape
             )
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
@@ -658,7 +754,7 @@ private fun HeroCard(taskCount: Int, style: GlassStyle = DefaultGlassStyle) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Location reminders",
+                text = "Geo reminders",
                 style = MaterialTheme.typography.bodyLarge,
                 color = textMuted
             )
@@ -675,7 +771,7 @@ private fun HeroCard(taskCount: Int, style: GlassStyle = DefaultGlassStyle) {
 @Composable
 private fun EmptyStateCard(onAddReminder: () -> Unit, style: GlassStyle = DefaultGlassStyle) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = glassCardShape,
         color = tintedPanelColor(style),
         shadowElevation = elevationFor(style),
         modifier = Modifier
@@ -683,7 +779,7 @@ private fun EmptyStateCard(onAddReminder: () -> Unit, style: GlassStyle = Defaul
             .border(
                 width = 1.dp,
                 color = strokeFor(style),
-                shape = RoundedCornerShape(20.dp)
+                shape = glassCardShape
             )
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
@@ -695,7 +791,7 @@ private fun EmptyStateCard(onAddReminder: () -> Unit, style: GlassStyle = Defaul
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Create location reminders",
+                text = "Tap Add to start",
                 style = MaterialTheme.typography.bodyLarge,
                 color = textMuted
             )
@@ -714,7 +810,7 @@ private fun StatusCard(
     style: GlassStyle = DefaultGlassStyle
 ) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = glassCardShape,
         color = tintedPanelColor(style),
         shadowElevation = elevationFor(style),
         modifier = Modifier
@@ -722,7 +818,7 @@ private fun StatusCard(
             .border(
                 width = 1.dp,
                 color = strokeFor(style),
-                shape = RoundedCornerShape(20.dp)
+                shape = glassCardShape
             )
     ) {
         Row(
@@ -756,6 +852,11 @@ private fun ReminderTaskCard(
     onEdit: () -> Unit
 ) {
     var isExpanded by rememberSaveable(task.id) { mutableStateOf(false) }
+    var cardVisible by rememberSaveable(task.id) { mutableStateOf(false) }
+
+    LaunchedEffect(task.id) {
+        cardVisible = true
+    }
 
     val titleColor = if (task.isCompleted) textMuted else textLight
     val subtitleColor = if (task.isCompleted) Color(0xFF616161) else Color(0xFFBBBBBB)
@@ -768,38 +869,65 @@ private fun ReminderTaskCard(
             listOf(gradientStart, gradientEnd)
     )
 
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (task.isCompleted) 
-                Color(0x99333333) 
-            else 
-                tintedPanelColor(style)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = elevationFor(style)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(
-                width = 1.dp,
-                color = strokeFor(style),
-                shape = RoundedCornerShape(20.dp)
-            )
-            .combinedClickable(
-                onClick = { /* no-op */ },
-                onLongClick = { isExpanded = !isExpanded }
-            )
+    AnimatedVisibility(
+        visible = cardVisible,
+        enter = fadeIn(tween(260)) + slideInVertically(tween(260)) { it / 8 },
+        exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { it / 10 }
     ) {
-        val expandedBackground = if (isExpanded && !task.isCompleted) {
-            Modifier.background(gradientBrush)
-        } else {
-            Modifier
-        }
-        Box(
+        Card(
+            shape = glassCardShape,
+            colors = CardDefaults.cardColors(
+                containerColor = if (task.isCompleted)
+                    Color(0x99333333)
+                else
+                    tintedPanelColor(style)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = elevationFor(style)),
             modifier = Modifier
                 .fillMaxWidth()
-                .then(expandedBackground)
+                .border(
+                    width = 1.dp,
+                    color = strokeFor(style),
+                    shape = glassCardShape
+                )
+                .graphicsLayer {
+                    if (!task.isCompleted) {
+                        shadowElevation = 18.dp.toPx()
+                    }
+                }
+                .combinedClickable(
+                    onClick = { /* no-op */ },
+                    onLongClick = { isExpanded = !isExpanded }
+                )
         ) {
-            if (!isExpanded) {
+            val expandedBackground = if (isExpanded && !task.isCompleted) {
+                Modifier.background(gradientBrush)
+            } else {
+                Modifier
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(expandedBackground)
+            ) {
+                if (!task.isCompleted) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        gradientStart.copy(alpha = 0.18f),
+                                        Color.Transparent
+                                    ),
+                                    center = Offset(120f, 50f),
+                                    radius = 420f
+                                )
+                            )
+                    )
+                }
+
+                if (!isExpanded) {
                 // Collapsed state: Title + Icon buttons only
                 Row(
                     modifier = Modifier
@@ -817,7 +945,7 @@ private fun ReminderTaskCard(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Long press to expand",
+                            text = "Hold for details",
                             style = MaterialTheme.typography.labelSmall,
                             color = textMuted
                         )
@@ -852,7 +980,7 @@ private fun ReminderTaskCard(
                         }
                     }
                 }
-            } else {
+                } else {
                 // Expanded state: Full details
                 Column(modifier = Modifier.padding(20.dp)) {
                     Row(
@@ -899,7 +1027,7 @@ private fun ReminderTaskCard(
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     Text(
-                        text = "📍 ${task.latitude}, ${task.longitude}",
+                        text = "${task.latitude}, ${task.longitude}",
                         style = MaterialTheme.typography.bodySmall,
                         color = textMuted
                     )
@@ -907,28 +1035,40 @@ private fun ReminderTaskCard(
                     
                     // Action buttons
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
-                            Text("Edit")
-                        }
-                        OutlinedButton(onClick = onToggleCompleted, modifier = Modifier.weight(1f)) {
-                            Text(if (task.isCompleted) "Reopen" else "Complete")
-                        }
+                        GlassButton(
+                            text = "Edit",
+                            onClick = onEdit,
+                            style = style,
+                            size = "md",
+                            variant = "outline",
+                            modifier = Modifier.weight(1f)
+                        )
+                        GlassButton(
+                            text = if (task.isCompleted) "Reopen" else "Complete",
+                            onClick = onToggleCompleted,
+                            style = style,
+                            size = "md",
+                            variant = "outline",
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
         }
+    }
     }
 }
 
 @Composable
 private fun Chip(label: String, style: GlassStyle = DefaultGlassStyle) {
     Surface(
-        color = tintedPanelColor(style).copy(alpha = 0.55f),
-        shape = RoundedCornerShape(999.dp),
+        color = tintedPanelColor(style).copy(alpha = 0.67f),
+        shape = glassCardShape,
+        shadowElevation = 3.dp,
         modifier = Modifier.border(
             width = 1.dp,
             color = strokeFor(style),
-            shape = RoundedCornerShape(999.dp)
+            shape = glassCardShape
         )
     ) {
         Text(
@@ -957,7 +1097,11 @@ private fun GlassButton(
         else -> 44.dp
     }
     val contentColor = textColor ?: if (variant == "solid") Color(0xFF101828) else textLight
-    val bgColor = if (variant == "solid") accentPrimary else Color.Transparent
+    val bgColor = when (variant) {
+        "solid" -> accentPrimary
+        "outline" -> tintedPanelColor(style).copy(alpha = 0.52f)
+        else -> Color.Transparent
+    }
 
     when (variant) {
         "solid" -> {
@@ -965,6 +1109,7 @@ private fun GlassButton(
                 onClick = onClick,
                 enabled = enabled,
                 modifier = modifier.heightIn(min = minHeight),
+                shape = glassCardShape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = bgColor,
                     contentColor = contentColor,
@@ -981,6 +1126,13 @@ private fun GlassButton(
                 onClick = onClick,
                 enabled = enabled,
                 modifier = modifier.heightIn(min = minHeight),
+                shape = glassCardShape,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = bgColor,
+                    contentColor = contentColor,
+                    disabledContainerColor = bgColor.copy(alpha = 0.45f),
+                    disabledContentColor = contentColor.copy(alpha = 0.6f)
+                ),
                 border = androidx.compose.foundation.BorderStroke(
                     width = if (style.border == "strong") 2.dp else 1.dp,
                     color = strokeFor(style)
@@ -994,7 +1146,11 @@ private fun GlassButton(
             TextButton(
                 onClick = onClick,
                 enabled = enabled,
-                modifier = modifier.heightIn(min = minHeight)
+                modifier = modifier.heightIn(min = minHeight),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = contentColor,
+                    disabledContentColor = contentColor.copy(alpha = 0.6f)
+                )
             ) {
                 Text(text = text, color = contentColor)
             }
@@ -1062,7 +1218,7 @@ private fun GlassConfirmModal(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = glassModalShape,
             color = tintedPanelColor(style),
             shadowElevation = elevationFor(style),
             modifier = Modifier
@@ -1071,7 +1227,7 @@ private fun GlassConfirmModal(
                 .border(
                     width = 1.dp,
                     color = strokeFor(style),
-                    shape = RoundedCornerShape(24.dp)
+                    shape = glassModalShape
                 )
         ) {
             Column(
@@ -1113,7 +1269,7 @@ private fun GlassStatusPopup(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = glassCardShape,
         color = tintedPanelColor(style),
         shadowElevation = elevationFor(style),
         modifier = modifier
@@ -1121,7 +1277,7 @@ private fun GlassStatusPopup(
             .border(
                 width = 1.dp,
                 color = strokeFor(style),
-                shape = RoundedCornerShape(16.dp)
+                shape = glassCardShape
             )
     ) {
         Row(
@@ -1168,7 +1324,7 @@ private fun GlassPermissionPopup(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = glassModalShape,
             color = tintedPanelColor(style),
             shadowElevation = elevationFor(style),
             modifier = Modifier
@@ -1177,7 +1333,7 @@ private fun GlassPermissionPopup(
                 .border(
                     width = 1.dp,
                     color = strokeFor(style),
-                    shape = RoundedCornerShape(24.dp)
+                    shape = glassModalShape
                 )
         ) {
             Column(
