@@ -170,6 +170,14 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun deleteTask(taskId: Long) {
+        viewModelScope.launch {
+            repository.deleteTask(taskId)
+            geofenceScheduler.remove(taskId)
+            statusMessage.value = "Reminder deleted"
+        }
+    }
+
     fun clearStatusMessage() {
         statusMessage.value = null
     }

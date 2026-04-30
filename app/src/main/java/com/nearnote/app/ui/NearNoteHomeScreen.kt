@@ -9,7 +9,8 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,10 +39,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,12 +60,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import com.nearnote.app.data.model.ReminderTask
 
-private val glassPanel = Color(0xE6FFFFFF)
-private val glassPanelWarm = Color(0xE8FFF7EC)
-private val glassHero = Color(0xCC17324D)
-private val glassStroke = Color(0x66FFFFFF)
+// Glassmorphism Color Palette
+private val charcoalBg = Color(0xFF121212)
+private val charcoalSecondary = Color(0xFF1D1A18)
+private val glassPanel = Color(0xCCCCCCCC)  // 80% opaque frosted glass
+private val gradientStart = Color(0xFFC48A3A)
+private val gradientEnd = Color(0xFFB8564A)
+private val accentPrimary = Color(0xFFF0B35E)
+private val accentGold = Color(0xFFFFC107)
+private val accentRed = Color(0xFFEF5350)
+private val textLight = Color(0xFFE0E0E0)
+private val textMuted = Color(0xFF9E9E9E)
+private val glassStroke = Color(0x4DFFFFFF)  // Glass border
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,20 +119,31 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = if (editorState == null) "NearNote" else if (editorState.id == null) "Add reminder" else "Edit reminder"
-                    )
-                },
-                actions = {
-                    if (editorState != null) {
-                        TextButton(onClick = viewModel::dismissEditor) {
-                            Text("Close")
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Brush.horizontalGradient(listOf(gradientStart, gradientEnd)))
+            ) {
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = textLight,
+                        actionIconContentColor = textLight
+                    ),
+                    title = {
+                        Text(
+                            text = if (editorState == null) "NearNote" else if (editorState.id == null) "Add reminder" else "Edit reminder"
+                        )
+                    },
+                    actions = {
+                        if (editorState != null) {
+                            TextButton(onClick = viewModel::dismissEditor) {
+                                Text("Close", color = textLight)
+                            }
                         }
                     }
-                }
-            )
+                )
+            }
         },
         floatingActionButton = {
             if (editorState == null) {
@@ -134,11 +160,7 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                 .fillMaxSize()
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFFF8F1E7),
-                            Color(0xFFE6EEF5),
-                            Color(0xFFF7FBF8)
-                        )
+                        colors = listOf(charcoalBg, charcoalSecondary, charcoalBg)
                     )
                 )
                 .padding(innerPadding)
@@ -203,7 +225,7 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                     items(activeTasks, key = { it.id }) { task ->
                         ReminderTaskCard(
                             task = task,
-                            onToggle = { viewModel.toggleTask(task) },
+                            onDelete = { viewModel.deleteTask(task.id) },
                             onToggleCompleted = { viewModel.toggleTaskCompleted(task) },
                             onEdit = { viewModel.startEditReminder(task) }
                         )
@@ -244,7 +266,7 @@ fun NearNoteHomeScreen(viewModel: NearNoteViewModel) {
                         items(completedTasks, key = { "completed-${it.id}" }) { task ->
                             ReminderTaskCard(
                                 task = task,
-                                onToggle = { viewModel.toggleTask(task) },
+                                onDelete = { viewModel.deleteTask(task.id) },
                                 onToggleCompleted = { viewModel.toggleTaskCompleted(task) },
                                 onEdit = { viewModel.startEditReminder(task) }
                             )
@@ -277,22 +299,27 @@ private fun PermissionStatusCard(
     onOpenSettings: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = glassPanelWarm,
-        border = androidx.compose.foundation.BorderStroke(1.dp, glassStroke),
-        modifier = Modifier.fillMaxWidth()
+        shape = RoundedCornerShape(20.dp),
+        color = glassPanel,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = glassStroke,
+                shape = RoundedCornerShape(20.dp)
+            )
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                text = "Permissions still needed",
+                text = "Permissions needed",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color(0xFF14293F),
+                color = textLight,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = "Geofenced reminders need location access in the background, and notifications must be allowed to surface alerts.",
+                text = "Geofence & location background access",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF4D5966)
+                color = textMuted
             )
             PermissionRow(label = "Foreground location", granted = hasForegroundLocation)
             PermissionRow(label = "Background location", granted = hasBackgroundLocation)
@@ -328,37 +355,45 @@ private fun PermissionRow(label: String, granted: Boolean) {
     Text(
         text = if (granted) "$label: granted" else "$label: missing",
         style = MaterialTheme.typography.bodyMedium,
-        color = if (granted) Color(0xFF17633A) else Color(0xFF9C3E00)
+        color = if (granted) accentGold else accentRed
     )
 }
 
 @Composable
 private fun HeroCard(taskCount: Int) {
+    val heroGradient = Brush.horizontalGradient(
+        colors = listOf(gradientStart, gradientEnd)
+    )
     Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = glassHero,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66FFFFFF)),
-        tonalElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
+        shape = RoundedCornerShape(20.dp),
+        color = glassPanel,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(heroGradient)
+            .border(
+                width = 1.dp,
+                color = glassStroke,
+                shape = RoundedCornerShape(20.dp)
+            )
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Text(
                 text = "NearNote",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color(0xFFFFF4E8),
+                color = textLight,
                 fontWeight = FontWeight.SemiBold
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Location-first reminders for errands, pickups, drop-offs, and the random things that are easy to forget until you are already nearby.",
+                text = "Location reminders",
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color(0xFFD9E5F2)
+                color = textMuted
             )
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "$taskCount active reminders",
+                text = "$taskCount active",
                 style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFFFFC66D)
+                color = accentGold
             )
         }
     }
@@ -367,27 +402,32 @@ private fun HeroCard(taskCount: Int) {
 @Composable
 private fun EmptyStateCard(onAddReminder: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(20.dp),
         color = glassPanel,
-        border = androidx.compose.foundation.BorderStroke(1.dp, glassStroke),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = glassStroke,
+                shape = RoundedCornerShape(20.dp)
+            )
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Text(
                 text = "No reminders yet",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color(0xFF14293F),
+                color = textLight,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Create your first location reminder with a place, radius, trigger mode, and recurrence rule.",
+                text = "Create location reminders",
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color(0xFF4D5966)
+                color = textMuted
             )
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedButton(onClick = onAddReminder) {
-                Text("Create reminder")
+                Text("Add reminder")
             }
         }
     }
@@ -397,9 +437,14 @@ private fun EmptyStateCard(onAddReminder: () -> Unit) {
 private fun StatusCard(message: String, onDismiss: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = Color(0xE6FFF3D6),
-        border = androidx.compose.foundation.BorderStroke(1.dp, glassStroke),
-        modifier = Modifier.fillMaxWidth()
+        color = glassPanel,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = glassStroke,
+                shape = RoundedCornerShape(20.dp)
+            )
     ) {
         Row(
             modifier = Modifier
@@ -412,7 +457,7 @@ private fun StatusCard(message: String, onDismiss: () -> Unit) {
                 text = message,
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF7A5400)
+                color = accentGold
             )
             Spacer(modifier = Modifier.width(12.dp))
             TextButton(onClick = onDismiss) {
@@ -425,74 +470,167 @@ private fun StatusCard(message: String, onDismiss: () -> Unit) {
 @Composable
 private fun ReminderTaskCard(
     task: ReminderTask,
-    onToggle: () -> Unit,
+    onDelete: () -> Unit,
     onToggleCompleted: () -> Unit,
     onEdit: () -> Unit
 ) {
-    val cardColor = if (task.isCompleted) Color(0xCCF1F3F5) else glassPanel
-    val titleColor = if (task.isCompleted) Color(0xFF9CA3AF) else Color(0xFF14293F)
-    val subtitleColor = if (task.isCompleted) Color(0xFFBBC4CE) else Color(0xFF496580)
+    var isExpanded by rememberSaveable(task.id) { mutableStateOf(false) }
+
+    val titleColor = if (task.isCompleted) textMuted else textLight
+    val subtitleColor = if (task.isCompleted) Color(0xFF616161) else Color(0xFFBBBBBB)
+    
+    // Gradient for card background (left to right)
+    val gradientBrush = Brush.horizontalGradient(
+        colors = if (task.isCompleted) 
+            listOf(Color(0x66666666), Color(0x4D666666))
+        else
+            listOf(gradientStart, gradientEnd)
+    )
 
     Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = cardColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (task.isCompleted) 0.dp else 3.dp),
-        modifier = Modifier.clickable(onClick = onEdit)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (task.isCompleted) 
+                Color(0x99333333) 
+            else 
+                glassPanel
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = glassStroke,
+                shape = RoundedCornerShape(20.dp)
+            )
+            .combinedClickable(
+                onClick = { /* no-op */ },
+                onLongClick = { isExpanded = !isExpanded }
+            )
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = titleColor
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = task.placeName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = subtitleColor
-                    )
-                }
-                Switch(checked = task.isEnabled, onCheckedChange = { onToggle() })
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            if (task.note.isNotBlank()) {
-                Text(
-                    text = task.note,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF4D5966)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (isExpanded && !task.isCompleted) gradientBrush else Brush.solidColor(Color.Transparent)
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Chip(label = "${task.radiusMeters}m")
-                Chip(label = task.triggerMode.replace('_', ' '))
-                Chip(label = task.recurrenceType)
-                Chip(label = task.priority)
-                if (task.isCompleted) {
-                    Chip(label = "Completed")
+        ) {
+            if (!isExpanded) {
+                // Collapsed state: Title + Icon buttons only
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = task.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = titleColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Long press to expand",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = textMuted
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.padding(start = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        IconButton(onClick = onEdit, modifier = Modifier.width(40.dp)) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Edit",
+                                tint = accentPrimary,
+                                modifier = Modifier.width(20.dp)
+                            )
+                        }
+                        IconButton(onClick = onToggleCompleted, modifier = Modifier.width(40.dp)) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = if (task.isCompleted) "Reopen" else "Complete",
+                                tint = if (task.isCompleted) textMuted else accentGold,
+                                modifier = Modifier.width(20.dp)
+                            )
+                        }
+                        IconButton(onClick = onDelete, modifier = Modifier.width(40.dp)) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Delete",
+                                tint = accentRed,
+                                modifier = Modifier.width(20.dp)
+                            )
+                        }
+                    }
                 }
-            }
-            Spacer(modifier = Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = onEdit) {
-                    Text("Edit")
+            } else {
+                // Expanded state: Full details
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = task.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = titleColor
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = task.placeName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = subtitleColor
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    // Details grid
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Chip(label = "${task.radiusMeters}m")
+                        Chip(label = task.priority)
+                        Chip(label = task.triggerMode.replace('_', ' '))
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Chip(label = task.recurrenceType)
+                        if (task.isCompleted) {
+                            Chip(label = "Completed")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text(
+                        text = "📍 ${task.latitude}, ${task.longitude}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = textMuted
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    // Action buttons
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
+                            Text("Edit")
+                        }
+                        OutlinedButton(onClick = onToggleCompleted, modifier = Modifier.weight(1f)) {
+                            Text(if (task.isCompleted) "Reopen" else "Complete")
+                        }
+                    }
                 }
-                OutlinedButton(onClick = onToggleCompleted) {
-                    Text(if (task.isCompleted) "Reopen" else "Complete")
-                }
-                Text(
-                    text = "${task.latitude}, ${task.longitude}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF6B7280),
-                    modifier = Modifier.align(Alignment.CenterVertically)
-                )
             }
         }
     }
@@ -501,14 +639,20 @@ private fun ReminderTaskCard(
 @Composable
 private fun Chip(label: String) {
     Surface(
-        color = Color(0xDAEAF1FA),
-        shape = RoundedCornerShape(999.dp)
+        color = Color(0x4D87CEEB),
+        shape = RoundedCornerShape(999.dp),
+        modifier = Modifier.border(
+            width = 1.dp,
+            color = glassStroke,
+            shape = RoundedCornerShape(999.dp)
+        )
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelLarge,
-            color = Color(0xFF234261)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = textLight
+        )
         )
     }
 }
@@ -617,24 +761,33 @@ private fun ReminderEditorScreen(
             .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        val editorGradient = Brush.horizontalGradient(
+            colors = listOf(gradientStart, gradientEnd)
+        )
         Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = glassHero,
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66FFFFFF)),
-            modifier = Modifier.fillMaxWidth()
+            shape = RoundedCornerShape(20.dp),
+            color = glassPanel,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(editorGradient)
+                .border(
+                    width = 1.dp,
+                    color = glassStroke,
+                    shape = RoundedCornerShape(20.dp)
+                )
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
                 Text(
-                    text = if (editorState.id == null) "Plan a new location reminder" else "Update this reminder",
+                    text = if (editorState.id == null) "Add reminder" else "Edit reminder",
                     style = MaterialTheme.typography.headlineSmall,
-                    color = Color(0xFFFFF4E8),
+                    color = textLight,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Search for a place or enter coordinates manually. Everything stays on your device.",
+                    text = "Location & timing",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = Color(0xFFD9E5F2)
+                    color = textMuted
                 )
             }
         }
