@@ -55,6 +55,7 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun startEditReminder(task: ReminderTask) {
+        val parsedDays = task.recurrenceDays.split(',').map { it.trim() }.filter { it.isNotEmpty() }
         editorState.value = ReminderEditorState(
             id = task.id,
             createdAt = task.createdAt,
@@ -69,6 +70,8 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
             priority = task.priority,
             recurrenceType = task.recurrenceType,
             recurrenceInterval = task.recurrenceInterval?.toString().orEmpty(),
+            recurrenceCustomMode = if (parsedDays.isNotEmpty()) CUSTOM_MODE_WEEKDAYS else CUSTOM_MODE_DAYS,
+            recurrenceWeekdays = if (parsedDays.isEmpty()) setOf("MON", "TUE", "WED", "THU", "FRI") else parsedDays.toSet(),
             isEnabled = task.isEnabled,
             isCompleted = task.isCompleted
         )
@@ -142,6 +145,11 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
                     priority = current.priority,
                     recurrenceType = current.recurrenceType,
                     recurrenceInterval = current.recurrenceInterval.trim().takeIf { current.recurrenceType == RECURRENCE_CUSTOM && it.isNotEmpty() }?.toInt(),
+                    recurrenceDays = if (current.recurrenceType == RECURRENCE_CUSTOM && current.recurrenceCustomMode == CUSTOM_MODE_WEEKDAYS) {
+                        current.recurrenceWeekdays.sorted().joinToString(",")
+                    } else {
+                        ""
+                    },
                     isEnabled = current.isEnabled,
                     isCompleted = current.isCompleted,
                     createdAt = current.createdAt ?: now,
@@ -178,6 +186,16 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun restoreTask(task: ReminderTask) {
+        viewModelScope.launch {
+            repository.saveTask(task.copy(updatedAt = System.currentTimeMillis()))
+            if (task.isEnabled && !task.isCompleted) {
+                geofenceScheduler.upsert(task)
+            }
+            statusMessage.value = "Delete undone"
+        }
+    }
+
     fun clearStatusMessage() {
         statusMessage.value = null
     }
@@ -203,8 +221,10 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
             if (dwellValue !in 1..120) return "Dwell must be between 1 and 120 minutes"
         }
         if (editor.recurrenceType == RECURRENCE_CUSTOM) {
-            val interval = editor.recurrenceInterval.trim().toIntOrNull() ?: return "Custom interval must be a whole number"
-            if (interval !in 1..365) return "Custom interval must be between 1 and 365 days"
+            if (editor.recurrenceCustomMode == CUSTOM_MODE_DAYS) {
+                val interval = editor.recurrenceInterval.trim().toIntOrNull() ?: return "Custom interval must be a whole number"
+                if (interval !in 1..365) return "Custom interval must be between 1 and 365 days"
+            }
         }
         return null
     }
@@ -230,6 +250,9 @@ class NearNoteViewModel(application: Application) : AndroidViewModel(application
         const val RECURRENCE_WEEKLY = "WEEKLY"
         const val RECURRENCE_MONTHLY = "MONTHLY"
         const val RECURRENCE_CUSTOM = "CUSTOM"
+
+        const val CUSTOM_MODE_DAYS = "DAYS"
+        const val CUSTOM_MODE_WEEKDAYS = "WEEKDAYS"
     }
 }
 
@@ -253,6 +276,8 @@ data class ReminderEditorState(
     val priority: String = NearNoteViewModel.PRIORITY_MEDIUM,
     val recurrenceType: String = NearNoteViewModel.RECURRENCE_ONCE,
     val recurrenceInterval: String = "",
+    val recurrenceCustomMode: String = NearNoteViewModel.CUSTOM_MODE_DAYS,
+    val recurrenceWeekdays: Set<String> = setOf("MON", "TUE", "WED", "THU", "FRI"),
     val isEnabled: Boolean = true,
     val isCompleted: Boolean = false
 )
