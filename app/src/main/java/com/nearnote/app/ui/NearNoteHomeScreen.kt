@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -468,6 +469,7 @@ private fun StatusCard(message: String, onDismiss: () -> Unit) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun ReminderTaskCard(
     task: ReminderTask,
     onDelete: () -> Unit,
@@ -508,12 +510,15 @@ private fun ReminderTaskCard(
                 onLongClick = { isExpanded = !isExpanded }
             )
     ) {
+        val expandedBackground = if (isExpanded && !task.isCompleted) {
+            Modifier.background(gradientBrush)
+        } else {
+            Modifier
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    if (isExpanded && !task.isCompleted) gradientBrush else Brush.solidColor(Color.Transparent)
-                )
+                .then(expandedBackground)
         ) {
             if (!isExpanded) {
                 // Collapsed state: Title + Icon buttons only
@@ -653,7 +658,6 @@ private fun Chip(label: String) {
             style = MaterialTheme.typography.labelMedium,
             color = textLight
         )
-        )
     }
 }
 
@@ -693,12 +697,13 @@ private fun ReminderEditorScreen(
             initialLongitude = editorState.longitude.toDoubleOrNull() ?: 0.0,
             radiusMeters = editorState.radiusMeters.toIntOrNull() ?: 250,
             placeName = editorState.placeName,
-            onPlaceSelected = { lat, lon, place ->
+            onPlaceSelected = { lat, lon, place, radius ->
                 onEditorChange(
                     editorState.copy(
                         placeName = place,
                         latitude = lat.toString(),
-                        longitude = lon.toString()
+                        longitude = lon.toString(),
+                        radiusMeters = radius.toString()
                     )
                 )
             },

@@ -2,6 +2,7 @@ package com.nearnote.app.ui
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -29,6 +30,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,7 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
-import com.nearnote.app.location.OsrmRoutingHelper
 import com.nearnote.app.location.PlaceSearchHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -77,6 +78,8 @@ private val ALIDADE_SMOOTH = object : OnlineTileSourceBase(
 
 private val mapFallback = GeoPoint(28.6139, 77.2090)
 private val poiChips = listOf("Pharmacy", "Fuel", "ATM", "Hospital", "Restaurant")
+private const val MAP_SETTINGS_PREFS = "map_picker_settings"
+private const val KEY_SUGGESTION_MERGE_DISTANCE = "suggestion_merge_distance"
 
 @Composable
 fun MapPickerScreen(
@@ -84,10 +87,11 @@ fun MapPickerScreen(
     initialLongitude: Double = 0.0,
     radiusMeters: Int = 250,
     placeName: String = "",
-    onPlaceSelected: (latitude: Double, longitude: Double, name: String) -> Unit,
+    onPlaceSelected: (latitude: Double, longitude: Double, name: String, radiusMeters: Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val mapPrefs = remember { context.getSharedPreferences(MAP_SETTINGS_PREFS, Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     val helper = remember { PlaceSearchHelper(context) }
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
@@ -98,11 +102,13 @@ fun MapPickerScreen(
     var searchQuery by remember { mutableStateOf(placeName) }
     var selectedLatitude by remember { mutableDoubleStateOf(initialLatitude.takeIf { it != 0.0 } ?: 0.0) }
     var selectedLongitude by remember { mutableDoubleStateOf(initialLongitude.takeIf { it != 0.0 } ?: 0.0) }
+    var selectedRadius by remember { mutableStateOf(radiusMeters) }
+    var dedupeDistanceMeters by remember {
+        mutableStateOf(mapPrefs.getInt(KEY_SUGGESTION_MERGE_DISTANCE, 120))
+    }
+    var showMapSettings by remember { mutableStateOf(false) }
     var selectedName by remember { mutableStateOf(placeName.ifBlank { "Selected location" }) }
     var selectedAddress by remember { mutableStateOf("") }
-
-    var currentLatitude by remember { mutableDoubleStateOf(0.0) }
-    var currentLongitude by remember { mutableDoubleStateOf(0.0) }
 
     var isSearching by remember { mutableStateOf(false) }
     var isLocating by remember { mutableStateOf(false) }
@@ -115,12 +121,6 @@ fun MapPickerScreen(
     var touchDownX by remember { mutableStateOf(0f) }
     var touchDownY by remember { mutableStateOf(0f) }
     var touchMoved by remember { mutableStateOf(false) }
-
-    // Route from OSRM (real road routing)
-    var routePoints by remember { mutableStateOf<List<org.osmdroid.util.GeoPoint>>(emptyList()) }
-    var routeDistanceKm by remember { mutableDoubleStateOf(0.0) }
-    var routeEtaMinutes by remember { mutableStateOf(0) }
-    var isFetchingRoute by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         Configuration.getInstance().load(context, android.preference.PreferenceManager.getDefaultSharedPreferences(context))
@@ -136,7 +136,7 @@ fun MapPickerScreen(
                 mapView = mapView,
                 latitude = selectedLatitude,
                 longitude = selectedLongitude,
-                radiusMeters = radiusMeters,
+                radiusMeters = selectedRadius,
                 label = selectedName
             )
             hasCenteredOnUser = true
@@ -150,8 +150,6 @@ fun MapPickerScreen(
         fusedLocationClient.lastLocation
             .addOnSuccessListener { location ->
                 if (location != null) {
-                    currentLatitude = location.latitude
-                    currentLongitude = location.longitude
                     mapView?.controller?.animateTo(GeoPoint(location.latitude, location.longitude))
                     mapView?.controller?.setZoom(17.0)
                     if (updateSelection) {
@@ -162,7 +160,7 @@ fun MapPickerScreen(
                             mapView = mapView,
                             latitude = selectedLatitude,
                             longitude = selectedLongitude,
-                            radiusMeters = radiusMeters,
+                            radiusMeters = selectedRadius,
                             label = selectedName
                         )
                     }
@@ -193,7 +191,10 @@ fun MapPickerScreen(
             return@LaunchedEffect
         }
         delay(220)
-        val results = helper.searchPlaces(searchQuery).take(5)
+        val results = dedupeNearbyPlaces(
+            candidates = helper.searchPlaces(searchQuery),
+            mergeDistanceMeters = dedupeDistanceMeters.toDouble()
+        ).take(5)
         suggestions = results
         showSuggestions = results.isNotEmpty()
     }
@@ -209,30 +210,16 @@ fun MapPickerScreen(
         }
     }
 
-    // Fetch real driving route via OSRM whenever origin or destination changes
-    LaunchedEffect(currentLatitude, currentLongitude, selectedLatitude, selectedLongitude) {
-        if (currentLatitude == 0.0 || currentLongitude == 0.0 ||
-            selectedLatitude == 0.0 || selectedLongitude == 0.0) return@LaunchedEffect
-        isFetchingRoute = true
-        val result = OsrmRoutingHelper.getRoute(
-            fromLat = currentLatitude, fromLon = currentLongitude,
-            toLat = selectedLatitude, toLon = selectedLongitude
+    LaunchedEffect(selectedLatitude, selectedLongitude, selectedRadius, selectedName, selectedAddress) {
+        if (selectedLatitude == 0.0 && selectedLongitude == 0.0) return@LaunchedEffect
+        updateMapOverlays(
+            mapView = mapView,
+            latitude = selectedLatitude,
+            longitude = selectedLongitude,
+            radiusMeters = selectedRadius,
+            label = selectedName,
+            snippet = selectedAddress
         )
-        if (result != null) {
-            routeDistanceKm = result.distanceMeters / 1000.0
-            routeEtaMinutes = (result.durationSeconds / 60.0).toInt().coerceAtLeast(1)
-            routePoints = result.polylinePoints
-            updateMapOverlays(
-                mapView = mapView,
-                latitude = selectedLatitude,
-                longitude = selectedLongitude,
-                radiusMeters = radiusMeters,
-                label = selectedName,
-                snippet = selectedAddress,
-                routePoints = result.polylinePoints
-            )
-        }
-        isFetchingRoute = false
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -287,7 +274,7 @@ fun MapPickerScreen(
                                         mapView = this,
                                         latitude = geoPoint.latitude,
                                         longitude = geoPoint.longitude,
-                                        radiusMeters = radiusMeters,
+                                        radiusMeters = selectedRadius,
                                         label = selectedName
                                     )
                                 }
@@ -299,7 +286,7 @@ fun MapPickerScreen(
                             mapView = this,
                             latitude = initialPoint.latitude,
                             longitude = initialPoint.longitude,
-                            radiusMeters = radiusMeters,
+                            radiusMeters = selectedRadius,
                             label = if (hasFineLocation) "Your location" else "Selected location"
                         )
                     }
@@ -346,7 +333,7 @@ fun MapPickerScreen(
                                             mapView = mapView,
                                             latitude = first.latitude,
                                             longitude = first.longitude,
-                                            radiusMeters = radiusMeters,
+                                            radiusMeters = selectedRadius,
                                             label = first.name
                                         )
                                         mapView?.controller?.animateTo(GeoPoint(first.latitude, first.longitude))
@@ -369,7 +356,10 @@ fun MapPickerScreen(
                                     searchQuery = chip
                                     isSearching = true
                                     scope.launch {
-                                        val first = helper.searchPlaces(chip).firstOrNull()
+                                        val first = dedupeNearbyPlaces(
+                                            candidates = helper.searchPlaces(chip),
+                                            mergeDistanceMeters = dedupeDistanceMeters.toDouble()
+                                        ).firstOrNull()
                                         if (first != null) {
                                             selectedLatitude = first.latitude
                                             selectedLongitude = first.longitude
@@ -379,7 +369,7 @@ fun MapPickerScreen(
                                                 mapView = mapView,
                                                 latitude = first.latitude,
                                                 longitude = first.longitude,
-                                                radiusMeters = radiusMeters,
+                                                radiusMeters = selectedRadius,
                                                 label = first.name
                                             )
                                             mapView?.controller?.animateTo(GeoPoint(first.latitude, first.longitude))
@@ -419,7 +409,7 @@ fun MapPickerScreen(
                                                 mapView = mapView,
                                                 latitude = place.latitude,
                                                 longitude = place.longitude,
-                                                radiusMeters = radiusMeters,
+                                                radiusMeters = selectedRadius,
                                                 label = place.name
                                             )
                                             mapView?.controller?.animateTo(GeoPoint(place.latitude, place.longitude))
@@ -453,8 +443,8 @@ fun MapPickerScreen(
                 shadowElevation = 8.dp,
                 color = Color.White,
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 12.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 120.dp)
                     .size(46.dp)
             ) {
                 IconButton(onClick = { recenterToUser(updateSelection = false) }, enabled = hasFineLocation && !isLocating) {
@@ -471,6 +461,34 @@ fun MapPickerScreen(
                             color = Color(0xFF111827),
                             fontWeight = FontWeight.Bold
                         )
+                    }
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xF7FFFFFF),
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 120.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(100, 250, 500, 1000).forEach { option ->
+                        val selected = selectedRadius == option
+                        OutlinedButton(
+                            onClick = { selectedRadius = option },
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Text(
+                                text = "${option}m",
+                                color = if (selected) Color(0xFF1D4ED8) else Color(0xFF374151),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                     }
                 }
             }
@@ -517,40 +535,56 @@ fun MapPickerScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF3F4F6)
-                    ) {
-                        Text(
-                            text = if (isFetchingRoute) "... km"
-                                   else if (routeDistanceKm > 0) String.format("%.1f km", routeDistanceKm)
-                                   else "-- km",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color(0xFF374151)
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFFFF7ED)
-                    ) {
-                        Text(
-                            text = if (isFetchingRoute) "... min"
-                                   else if (routeEtaMinutes > 0) "$routeEtaMinutes min"
-                                   else "-- min",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color(0xFF9A3412)
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
                         color = Color(0xFFEEF2FF)
                     ) {
                         Text(
-                            text = "${radiusMeters}m",
+                            text = "${selectedRadius}m",
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.labelLarge,
                             color = Color(0xFF3730A3)
                         )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Map settings",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF374151)
+                    )
+                    TextButton(onClick = { showMapSettings = !showMapSettings }) {
+                        Text(if (showMapSettings) "Hide" else "Show")
+                    }
+                }
+
+                AnimatedVisibility(visible = showMapSettings) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Suggestion merge distance",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF6B7280)
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(60, 120, 200).forEach { option ->
+                                val selected = dedupeDistanceMeters == option
+                                OutlinedButton(
+                                    onClick = {
+                                        dedupeDistanceMeters = option
+                                        mapPrefs.edit().putInt(KEY_SUGGESTION_MERGE_DISTANCE, option).apply()
+                                    }
+                                ) {
+                                    Text(
+                                        text = "${option}m",
+                                        color = if (selected) Color(0xFF1D4ED8) else Color(0xFF374151),
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -570,7 +604,7 @@ fun MapPickerScreen(
                     Button(
                         onClick = {
                             val finalName = selectedName.ifBlank { searchQuery.ifBlank { "Selected location" } }
-                            onPlaceSelected(selectedLatitude, selectedLongitude, finalName)
+                            onPlaceSelected(selectedLatitude, selectedLongitude, finalName, selectedRadius)
                             onDismiss()
                         },
                         modifier = Modifier.weight(1f)
@@ -589,24 +623,10 @@ private fun updateMapOverlays(
     longitude: Double,
     radiusMeters: Int,
     label: String,
-    snippet: String = "",
-    routePoints: List<GeoPoint> = emptyList()
+    snippet: String = ""
 ) {
     if (mapView == null) return
     mapView.overlays.clear()
-
-    // Draw route polyline (Directions API equivalent via OSRM)
-    if (routePoints.size >= 2) {
-        val polyline = org.osmdroid.views.overlay.Polyline(mapView).apply {
-            setPoints(routePoints)
-            outlinePaint.color = android.graphics.Color.parseColor("#2563EB")  // Uber blue
-            outlinePaint.strokeWidth = 8f
-            outlinePaint.alpha = 200
-            outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
-            outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
-        }
-        mapView.overlays.add(polyline)
-    }
 
     val marker = Marker(mapView).apply {
         position = GeoPoint(latitude, longitude)
@@ -632,4 +652,39 @@ private fun updateMapOverlays(
     }
     mapView.overlays.add(polygon)
     mapView.invalidate()
+}
+
+private fun dedupeNearbyPlaces(
+    candidates: List<PlaceSearchHelper.Place>,
+    mergeDistanceMeters: Double
+): List<PlaceSearchHelper.Place> {
+    val deduped = mutableListOf<PlaceSearchHelper.Place>()
+    for (candidate in candidates) {
+        val normalizedName = candidate.name.trim().lowercase()
+        val duplicateIndex = deduped.indexOfFirst { kept ->
+            kept.name.trim().lowercase() == normalizedName &&
+                distanceMeters(kept.latitude, kept.longitude, candidate.latitude, candidate.longitude) < mergeDistanceMeters
+        }
+
+        if (duplicateIndex == -1) {
+            deduped.add(candidate)
+        } else {
+            val kept = deduped[duplicateIndex]
+            if (candidate.address.length > kept.address.length) {
+                deduped[duplicateIndex] = candidate
+            }
+        }
+    }
+    return deduped
+}
+
+private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val earthRadius = 6371000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+        kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+        kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+    val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+    return earthRadius * c
 }
